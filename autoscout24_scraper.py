@@ -31,17 +31,33 @@ Optional range filters (price, mileage, first-registration year) map
 directly onto the search API's own filters: priceFrom/priceTo,
 mileageFrom/mileageTo, firstRegistrationYearFrom/firstRegistrationYearTo.
 
-Usage:
+This module can be used two ways:
+
+1. As a standalone CLI script that writes a CSV + JSON file:
+
     python3 autoscout24_scraper.py --make tesla --model model-s
     python3 autoscout24_scraper.py --make "Tesla" --model "Model S" --out tesla_model_s
     python3 autoscout24_scraper.py --make tesla --model model-s --no-detail   # skip per-listing detail fetch (faster, fewer fields)
     python3 autoscout24_scraper.py --make tesla --model model-s --price-to 30000 --year-from 2018
+
+2. As a library, imported from another project, returning data directly
+   instead of writing files:
+
+    from autoscout24_scraper import scrape
+
+    result = scrape("Tesla", "Model S", price_to=30000)
+    for row in result.rows:          # flattened dicts, one per listing
+        print(row["price"], row["url"])
+    result.listings                  # raw (unflattened) API JSON per listing
+    result.to_csv("tesla.csv")       # optional, if you want a file after all
+    result.to_json("tesla.json")
 """
 import argparse
 import csv
 import json
 import sys
 import time
+from dataclasses import dataclass, field
 from urllib.parse import quote
 
 import requests
@@ -305,6 +321,110 @@ def save_json(rows, path):
         json.dump(rows, f, ensure_ascii=False, indent=2)
 
 
+@dataclass
+class ScrapeResult:
+    """Everything a scrape() call produced, ready to use in-memory or save to disk."""
+    make_key: str
+    make_name: str
+    model_key: str
+    model_name: str
+    category: str
+    total_elements: int
+    listings: list = field(default_factory=list)  # raw API objects (summary or full detail shape)
+    rows: list = field(default_factory=list)       # flattened dicts, one per listing, CSV-ready
+
+    def to_csv(self, path):
+        save_csv(self.rows, path)
+
+    def to_json(self, path):
+        save_json(self.listings, path)
+
+
+def scrape(make, model, *, category="car", detail=True,
+           price_from=None, price_to=None, mileage_from=None, mileage_to=None,
+           year_from=None, year_to=None, delay=0.4, verbose=True, session=None):
+    """Search autoscout24.ch for a make/model and return the results in memory.
+
+    This is the library entry point: it does the same work as the CLI but
+    returns a ScrapeResult instead of writing files. The CLI (main(), below)
+    is a thin wrapper around this function.
+
+    Args:
+        make: Make name or key, e.g. "Tesla" or "tesla".
+        model: Model name or key, e.g. "Model S" or "model-s".
+        category: "car" (default) or "motorcycle".
+        detail: If True (default), visit every listing's detail endpoint one
+            by one to extract every field the API returns. If False, keep
+            only the summary fields from the search results (much faster).
+        price_from/price_to: Optional price range in CHF (inclusive).
+        mileage_from/mileage_to: Optional mileage range in km (inclusive).
+        year_from/year_to: Optional first-registration year range (inclusive).
+        delay: Seconds to wait between requests.
+        verbose: If True, print progress to stdout.
+        session: Optional requests.Session to reuse (e.g. across repeated
+            calls). A new one is created if not given.
+
+    Returns:
+        A ScrapeResult with `.listings` (raw API objects) and `.rows`
+        (flattened dicts, one per listing, sorted by price).
+    """
+    for lo_name, hi_name, lo, hi in (
+        ("price_from", "price_to", price_from, price_to),
+        ("mileage_from", "mileage_to", mileage_from, mileage_to),
+        ("year_from", "year_to", year_from, year_to),
+    ):
+        if lo is not None and hi is not None and lo > hi:
+            raise ValueError(f"{lo_name} ({lo}) cannot be greater than {hi_name} ({hi})")
+
+    session = session or make_session()
+
+    if verbose:
+        print(f"Resolving make {make!r} ...")
+    make_key, make_name = resolve_make_key(session, make, category)
+    if verbose:
+        print(f"  -> make key={make_key!r} name={make_name!r}")
+
+    if verbose:
+        print(f"Resolving model {model!r} for make {make_name!r} ...")
+    model_key, model_name = resolve_model_key(session, make_key, model, category)
+    if verbose:
+        print(f"  -> model key={model_key!r} name={model_name!r}")
+
+    if verbose:
+        active_filters = []
+        if price_from is not None or price_to is not None:
+            active_filters.append(f"price {price_from or 0}-{price_to or '∞'} CHF")
+        if mileage_from is not None or mileage_to is not None:
+            active_filters.append(f"mileage {mileage_from or 0}-{mileage_to or '∞'} km")
+        if year_from is not None or year_to is not None:
+            active_filters.append(f"year {year_from or '…'}-{year_to or '…'}")
+        filter_note = f" [filters: {', '.join(active_filters)}]" if active_filters else ""
+        print(f"Fetching listings for {make_name} {model_name} (Switzerland, autoscout24.ch){filter_note} ...")
+
+    listings = search_listings(
+        session, make_key, model_key, category, delay=delay, verbose=verbose,
+        price_from=price_from, price_to=price_to,
+        mileage_from=mileage_from, mileage_to=mileage_to,
+        year_from=year_from, year_to=year_to,
+    )
+    total_elements = len(listings)
+
+    if detail:
+        if verbose:
+            print(f"Visiting each of {len(listings)} listings one by one to extract full details ...")
+        listings = visit_all_listings(session, listings, delay=delay, verbose=verbose)
+
+    rows = [flatten_listing(item) for item in listings]
+    rows.sort(key=lambda r: (r.get("price") in (None, ""), r.get("price")))
+
+    return ScrapeResult(
+        make_key=make_key, make_name=make_name,
+        model_key=model_key, model_name=model_name,
+        category=category, total_elements=total_elements,
+        listings=listings, rows=rows,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Scrape autoscout24.ch listings for a given make/model.")
     parser.add_argument("--make", required=True, help="Make name or key, e.g. 'Tesla' or 'tesla'")
@@ -327,55 +447,23 @@ def main():
                          help="Latest first-registration year (inclusive).")
     args = parser.parse_args()
 
-    for lo_name, hi_name, lo, hi in (
-        ("--price-from", "--price-to", args.price_from, args.price_to),
-        ("--mileage-from", "--mileage-to", args.mileage_from, args.mileage_to),
-        ("--year-from", "--year-to", args.year_from, args.year_to),
-    ):
-        if lo is not None and hi is not None and lo > hi:
-            raise ValueError(f"{lo_name} ({lo}) cannot be greater than {hi_name} ({hi})")
-
-    session = make_session()
-
-    print(f"Resolving make {args.make!r} ...")
-    make_key, make_name = resolve_make_key(session, args.make, args.category)
-    print(f"  -> make key={make_key!r} name={make_name!r}")
-
-    print(f"Resolving model {args.model!r} for make {make_name!r} ...")
-    model_key, model_name = resolve_model_key(session, make_key, args.model, args.category)
-    print(f"  -> model key={model_key!r} name={model_name!r}")
-
-    active_filters = []
-    if args.price_from is not None or args.price_to is not None:
-        active_filters.append(f"price {args.price_from or 0}-{args.price_to or '∞'} CHF")
-    if args.mileage_from is not None or args.mileage_to is not None:
-        active_filters.append(f"mileage {args.mileage_from or 0}-{args.mileage_to or '∞'} km")
-    if args.year_from is not None or args.year_to is not None:
-        active_filters.append(f"year {args.year_from or '…'}-{args.year_to or '…'}")
-    filter_note = f" [filters: {', '.join(active_filters)}]" if active_filters else ""
-
-    print(f"Fetching listings for {make_name} {model_name} (Switzerland, autoscout24.ch){filter_note} ...")
-    raw_listings = search_listings(
-        session, make_key, model_key, args.category, delay=args.delay,
+    result = scrape(
+        args.make, args.model,
+        category=args.category,
+        detail=not args.no_detail,
         price_from=args.price_from, price_to=args.price_to,
         mileage_from=args.mileage_from, mileage_to=args.mileage_to,
         year_from=args.year_from, year_to=args.year_to,
+        delay=args.delay, verbose=True,
     )
 
-    if not args.no_detail:
-        print(f"Visiting each of {len(raw_listings)} listings one by one to extract full details ...")
-        raw_listings = visit_all_listings(session, raw_listings, delay=args.delay)
-
-    rows = [flatten_listing(item) for item in raw_listings]
-    rows.sort(key=lambda r: (r.get("price") in (None, ""), r.get("price")))
-
-    out_base = args.out or f"{make_key}_{model_key}"
+    out_base = args.out or f"{result.make_key}_{result.model_key}"
     csv_path = f"{out_base}.csv"
     json_path = f"{out_base}.json"
-    save_csv(rows, csv_path)
-    save_json(raw_listings, json_path)
+    result.to_csv(csv_path)
+    result.to_json(json_path)
 
-    print(f"\nDone. {len(rows)} unique listings found.")
+    print(f"\nDone. {len(result.rows)} unique listings found.")
     print(f"  CSV:  {csv_path}")
     print(f"  JSON: {json_path}")
 

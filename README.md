@@ -58,6 +58,11 @@ pipenv install
 
 ## Usage
 
+The scraper works two ways: as a standalone CLI script that writes files, or
+as a library you import into another project to get the data back directly.
+
+### As a CLI script
+
 ```bash
 pipenv run python autoscout24_scraper.py --make Tesla --model "Model S"
 ```
@@ -111,6 +116,43 @@ pipenv run python autoscout24_scraper.py --make BMW --model "M3"
 
 If you mistype a make or model, the script prints a clean error (and for an
 unknown model, the list of valid models for that make) instead of crashing.
+
+### As a library, from another project
+
+Import `scrape()` and call it directly — it does the same work as the CLI
+(search, then visit every listing for full detail) but returns a
+`ScrapeResult` object instead of writing files. No files are written unless
+you explicitly ask for them.
+
+```python
+from autoscout24_scraper import scrape
+
+result = scrape("Tesla", "Model S", price_to=30000, year_from=2018)
+
+result.rows       # list[dict]: one flattened dict per listing, CSV-ready
+result.listings   # list[dict]: raw (unflattened) API JSON per listing
+result.make_name, result.model_name, result.total_elements
+
+for row in result.rows:
+    print(row["price"], row["mileage"], row["url"])
+
+# Optional: write to disk anyway, e.g. for a one-off export
+result.to_csv("tesla_model_s.csv")
+result.to_json("tesla_model_s.json")
+```
+
+`scrape()` accepts the same options as the CLI flags (all keyword-only,
+matching the flag names with underscores instead of dashes):
+`category`, `detail` (`True` by default — set `False` for the fast,
+summary-only path), `price_from`/`price_to`, `mileage_from`/`mileage_to`,
+`year_from`/`year_to`, `delay`, `verbose` (set `False` to suppress the
+progress printouts), and `session` (pass your own `requests.Session` to
+reuse connections across multiple `scrape()` calls).
+
+Add this project's directory to your `PYTHONPATH` (or copy
+`autoscout24_scraper.py` alongside your code) so the import resolves; it
+only depends on `requests`, so `pip install requests` in your own project's
+environment is enough — pipenv here is only needed to run this repo's CLI.
 
 ## Output fields (CSV)
 
