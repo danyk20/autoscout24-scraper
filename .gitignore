@@ -4,3 +4,6 @@ __pycache__/
 *.csv
 *.json
 !Pipfile.lock
+.pytest_cache/
+.coverage
+htmlcov/

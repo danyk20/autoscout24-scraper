@@ -53,8 +53,11 @@ don't have it).
 
 ```bash
 cd AutoScout
-pipenv install
+pipenv install --dev
 ```
+
+(`--dev` also installs the test dependencies — pytest, pytest-cov, responses.
+Leave it off if you only want to run the scraper, not the test suite.)
 
 ## Usage
 
@@ -173,6 +176,57 @@ included (id, make, model, price, mileage, seller, teaser, url, ...).
 The JSON file always contains the raw, unflattened API response for each
 listing.
 
+## Testing
+
+The test suite lives in `tests/` and is split into two kinds of tests:
+
+- **Unit tests** (`tests/test_*.py`, excluding `test_e2e.py`) — every
+  function is tested in isolation with HTTP mocked out (via the
+  [`responses`](https://github.com/getsentry/responses) library), so they
+  run in well under a second, need no network access, and never touch
+  the real site. This is the default `pytest` run.
+- **End-to-end tests** (`tests/test_e2e.py`) — make real calls against
+  `api.autoscout24.ch`. They're marked `@pytest.mark.e2e` and excluded by
+  default; run them explicitly when you want to confirm the scraper still
+  works against the live API (e.g. after autoscout24.ch changes something).
+  They target Tesla Roadster specifically because its inventory is small
+  (order of ~10 listings), so the full detail-visiting pipeline and a real
+  CLI subprocess run both complete in a few seconds without hammering the
+  API.
+
+```bash
+# Unit tests only (fast, no network) — this is what `pytest` runs by default.
+# Also prints a coverage report and fails the run if coverage drops below 95%.
+pipenv run pytest
+
+# End-to-end tests only (real network calls, several seconds)
+pipenv run pytest -m e2e --no-cov
+
+# Everything
+pipenv run pytest -m "e2e or not e2e" --no-cov
+
+# HTML coverage report you can open in a browser
+pipenv run pytest --cov-report=html && open htmlcov/index.html
+```
+
+The unit suite covers 100% of `autoscout24_scraper.py` (the two lines
+excluded via `# pragma: no cover` are a defensive "unreachable" guard in the
+retry loop, and the `if __name__ == "__main__":` guard itself, which is
+exercised for real by the e2e suite's CLI subprocess tests instead).
+
+What's covered:
+
+| Area | Unit tests | E2E tests |
+|---|---|---|
+| `request_with_retries` | retry-then-succeed and exhausted-retries paths for 429/5xx/connection errors, no retry on 4xx | — |
+| `resolve_make_key` / `resolve_model_key` | exact key, exact name, substring fallback, not-found errors, category param | real lookups (`Tesla`, `Roadster`), unknown-make error |
+| `search_listings` | pagination + de-dup, stable sort, every filter combination, verbose on/off | real result count, real filter narrowing |
+| `fetch_detail` / `visit_all_listings` | seller backfill, progress printing, per-request delay | real detail fetch |
+| `flatten_listing` / `_scalarize` / `order_fieldnames` | every branch (nested dicts, lists, missing/unrecognized types) | implicitly, via real data |
+| `save_csv` / `save_json` / `ScrapeResult` | heterogeneous rows, unicode, empty input | round-trip against real files |
+| `scrape()` | orchestration, range validation, filter/session pass-through, sorting | full real pipeline, with and without `--detail` |
+| `main()` / `run_cli()` | every CLI flag, default vs. custom output filenames, all three exit-code paths | real subprocess run, real error exit code |
+
 ## Notes
 
 - Be a reasonable citizen: the default delay between requests is intentional.
@@ -181,4 +235,5 @@ listing.
 - If autoscout24.ch changes their API, the `resolve_make_key` /
   `resolve_model_key` / `search_listings` functions are the places to look —
   the module docstring at the top of `autoscout24_scraper.py` documents the
-  endpoint shapes in more detail.
+  endpoint shapes in more detail. Run the e2e suite after any such change to
+  confirm the fix.

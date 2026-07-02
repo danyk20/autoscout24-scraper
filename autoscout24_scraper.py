@@ -102,7 +102,7 @@ def request_with_retries(session, method, url, *, max_retries=5, backoff=1.5, **
             continue
         resp.raise_for_status()
         return resp
-    raise RuntimeError("unreachable")
+    raise RuntimeError("unreachable")  # pragma: no cover
 
 
 def resolve_make_key(session, make_query, vehicle_category="car"):
@@ -425,7 +425,7 @@ def scrape(make, model, *, category="car", detail=True,
     )
 
 
-def main():
+def build_arg_parser():
     parser = argparse.ArgumentParser(description="Scrape autoscout24.ch listings for a given make/model.")
     parser.add_argument("--make", required=True, help="Make name or key, e.g. 'Tesla' or 'tesla'")
     parser.add_argument("--model", required=True, help="Model name or key, e.g. 'Model S' or 'model-s'")
@@ -445,7 +445,16 @@ def main():
                          help="Earliest first-registration year (inclusive).")
     parser.add_argument("--year-to", type=int, default=None,
                          help="Latest first-registration year (inclusive).")
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv=None):
+    """CLI entry point. Parses argv (defaults to sys.argv[1:]), scrapes, and
+    writes CSV + JSON files. Returns 0 on success; lets exceptions propagate
+    (see run_cli() for the error-handling / exit-code wrapper used by the
+    __main__ guard below)."""
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
 
     result = scrape(
         args.make, args.model,
@@ -466,17 +475,25 @@ def main():
     print(f"\nDone. {len(result.rows)} unique listings found.")
     print(f"  CSV:  {csv_path}")
     print(f"  JSON: {json_path}")
+    return 0
 
 
-if __name__ == "__main__":
+def run_cli(argv=None):
+    """Run main() and translate exceptions into (message, exit code) the way
+    the command line expects. Factored out from the __main__ guard so it can
+    be unit-tested directly without spawning a subprocess."""
     try:
-        main()
+        return main(argv) or 0
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        return 1
     except requests.RequestException as exc:
         print(f"Network error talking to autoscout24.ch: {exc}", file=sys.stderr)
-        sys.exit(1)
+        return 1
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
-        sys.exit(130)
+        return 130
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised via subprocess in test_e2e.py
+    sys.exit(run_cli())

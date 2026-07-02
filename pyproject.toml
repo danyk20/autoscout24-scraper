@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+markers = [
+    "e2e: end-to-end tests that make real network calls to autoscout24.ch",
+]
+addopts = "-m 'not e2e' --cov=autoscout24_scraper --cov-report=term-missing --cov-fail-under=95"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["autoscout24_scraper"]
