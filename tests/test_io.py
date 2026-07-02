@@ -139,3 +139,21 @@ def test_scrape_result_defaults_to_empty_lists_when_not_provided():
     )
     assert result.listings == []
     assert result.rows == []
+
+
+def test_scrape_result_defaults_to_ch_domain_when_not_provided():
+    result = scraper.ScrapeResult(
+        make_key="tesla", make_name="TESLA",
+        model_key="model-s", model_name="MODEL S",
+        category="car", total_elements=0,
+    )
+    assert result.domain == "ch"
+
+
+def test_scrape_result_accepts_custom_domain():
+    result = scraper.ScrapeResult(
+        make_key="tesla", make_name="TESLA",
+        model_key="model-s", model_name="MODEL S",
+        category="car", total_elements=0, domain="de",
+    )
+    assert result.domain == "de"

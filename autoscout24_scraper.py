@@ -31,6 +31,14 @@ Optional range filters (price, mileage, first-registration year) map
 directly onto the search API's own filters: priceFrom/priceTo,
 mileageFrom/mileageTo, firstRegistrationYearFrom/firstRegistrationYearTo.
 
+Domain: every function takes an optional `domain` (default "ch"), and talks
+to `https://api.autoscout24.{domain}/v1/...` / builds ad URLs against
+`https://www.autoscout24.{domain}/...`. As of this writing, `api.autoscout24.ch`
+is the only country subdomain confirmed to expose this API shape (autoscout24's
+other country sites, e.g. .de/.fr/.it, are a different product/backend and
+were not reverse-engineered here) — `domain` exists so this keeps working with
+no code changes if/when AutoScout24 exposes the same API for another country.
+
 This module can be used two ways:
 
 1. As a standalone CLI script that writes a CSV + JSON file:
@@ -62,8 +70,17 @@ from urllib.parse import quote
 
 import requests
 
-API_BASE = "https://api.autoscout24.ch/v1"
+DEFAULT_DOMAIN = "ch"
+API_BASE = f"https://api.autoscout24.{DEFAULT_DOMAIN}/v1"
 PAGE_SIZE = 20
+
+
+def api_base(domain=DEFAULT_DOMAIN):
+    return f"https://api.autoscout24.{domain}/v1"
+
+
+def listing_url(listing_id, domain=DEFAULT_DOMAIN):
+    return f"https://www.autoscout24.{domain}/de/d/{listing_id}"
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                   "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -105,9 +122,9 @@ def request_with_retries(session, method, url, *, max_retries=5, backoff=1.5, **
     raise RuntimeError("unreachable")  # pragma: no cover
 
 
-def resolve_make_key(session, make_query, vehicle_category="car"):
+def resolve_make_key(session, make_query, vehicle_category="car", domain=DEFAULT_DOMAIN):
     """Accepts either an exact key (e.g. 'tesla') or a human name (e.g. 'Tesla')."""
-    resp = request_with_retries(session, "GET", f"{API_BASE}/makes",
+    resp = request_with_retries(session, "GET", f"{api_base(domain)}/makes",
                                  params={"vehicleCategory": vehicle_category})
     makes = resp.json()
     q = make_query.strip().lower()
@@ -123,8 +140,8 @@ def resolve_make_key(session, make_query, vehicle_category="car"):
     raise ValueError(f"Could not find a make matching {make_query!r}")
 
 
-def resolve_model_key(session, make_key, model_query, vehicle_category="car"):
-    resp = request_with_retries(session, "GET", f"{API_BASE}/makes/key/{quote(make_key)}/models",
+def resolve_model_key(session, make_key, model_query, vehicle_category="car", domain=DEFAULT_DOMAIN):
+    resp = request_with_retries(session, "GET", f"{api_base(domain)}/makes/key/{quote(make_key)}/models",
                                  params={"vehicleCategory": vehicle_category})
     models = resp.json()
     q = model_query.strip().lower()
@@ -144,7 +161,7 @@ def resolve_model_key(session, make_key, model_query, vehicle_category="car"):
 
 def search_listings(session, make_key, model_key, vehicle_category="car", delay=0.4, verbose=True,
                      price_from=None, price_to=None, mileage_from=None, mileage_to=None,
-                     year_from=None, year_to=None):
+                     year_from=None, year_to=None, domain=DEFAULT_DOMAIN):
     """Fetch every listing for a given make/model, deduplicated by id.
 
     Sorting explicitly by price is important: with no sort specified, the API
@@ -158,6 +175,10 @@ def search_listings(session, make_key, model_key, vehicle_category="car", delay=
     (priceFrom/priceTo, mileageFrom/mileageTo,
     firstRegistrationYearFrom/firstRegistrationYearTo). Leave any of them as
     None to not filter on that dimension.
+
+    Each returned listing has a "url" key set to its full ad URL (see
+    listing_url()), so the raw JSON always carries a direct link back to the
+    original ad, not just the flattened CSV rows.
     """
     query = {
         "vehicleCategories": [vehicle_category],
@@ -185,7 +206,7 @@ def search_listings(session, make_key, model_key, vehicle_category="car", delay=
     total_elements = None
     while page < total_pages:
         body = {"query": query, "sort": sort, "pagination": {"page": page, "size": PAGE_SIZE}}
-        resp = request_with_retries(session, "POST", f"{API_BASE}/listings/search", json=body)
+        resp = request_with_retries(session, "POST", f"{api_base(domain)}/listings/search", json=body)
         data = resp.json()
         total_pages = data.get("totalPages", 1)
         total_elements = data.get("totalElements", total_elements)
@@ -195,6 +216,7 @@ def search_listings(session, make_key, model_key, vehicle_category="car", delay=
         for item in content:
             if item["id"] not in seen_ids:
                 seen_ids.add(item["id"])
+                item["url"] = listing_url(item["id"], domain)
                 listings.append(item)
                 new_count += 1
 
@@ -212,36 +234,35 @@ def search_listings(session, make_key, model_key, vehicle_category="car", delay=
     return listings
 
 
-def fetch_detail(session, listing_id):
-    resp = request_with_retries(session, "GET", f"{API_BASE}/listings/{listing_id}")
+def fetch_detail(session, listing_id, domain=DEFAULT_DOMAIN):
+    resp = request_with_retries(session, "GET", f"{api_base(domain)}/listings/{listing_id}")
     return resp.json()
 
 
-def visit_all_listings(session, listings, delay=0.4, verbose=True):
+def visit_all_listings(session, listings, delay=0.4, verbose=True, domain=DEFAULT_DOMAIN):
     """Visit each listing's detail endpoint one by one and merge the result.
 
     The detail endpoint (GET /v1/listings/{id}) returns far more fields than
     the search endpoint (battery/range, dimensions, VIN, colors, equipment,
     description, ...) but drops the seller name/city/zip/type down to a bare
     sellerId, so we keep whatever the search response already had for that.
+    Each visited listing also gets its "url" key (re-)set, same as
+    search_listings(), so the raw JSON always carries a direct link to the ad.
     """
     visited = []
     total = len(listings)
     for i, item in enumerate(listings, 1):
         listing_id = item["id"]
-        detail = fetch_detail(session, listing_id)
+        detail = fetch_detail(session, listing_id, domain=domain)
         if "seller" in item:
             detail.setdefault("seller", item["seller"])
+        detail["url"] = listing_url(listing_id, domain)
         visited.append(detail)
         if verbose and (i % 10 == 0 or i == total):
             print(f"  visited {i}/{total} listings (id={listing_id})")
         if i < total:
             time.sleep(delay)
     return visited
-
-
-def listing_url(listing_id):
-    return f"https://www.autoscout24.ch/de/d/{listing_id}"
 
 
 # Fields worth pulling to the front of the CSV; everything else discovered on
@@ -292,7 +313,10 @@ def flatten_listing(item):
                 flat[f"{key}_{sub_key}"] = _scalarize(sub_value)
             continue
         flat[key] = _scalarize(value)
-    flat["url"] = listing_url(item.get("id"))
+    # search_listings()/visit_all_listings() already embed a domain-correct
+    # "url" on the raw item; only fall back to computing a default-domain one
+    # here for listings flattened without going through those (e.g. tests).
+    flat.setdefault("url", listing_url(item.get("id")))
     return flat
 
 
@@ -332,6 +356,7 @@ class ScrapeResult:
     total_elements: int
     listings: list = field(default_factory=list)  # raw API objects (summary or full detail shape)
     rows: list = field(default_factory=list)       # flattened dicts, one per listing, CSV-ready
+    domain: str = DEFAULT_DOMAIN                   # country domain that was scraped, e.g. "ch"
 
     def to_csv(self, path):
         save_csv(self.rows, path)
@@ -340,10 +365,10 @@ class ScrapeResult:
         save_json(self.listings, path)
 
 
-def scrape(make, model, *, category="car", detail=True,
+def scrape(make, model, *, domain=DEFAULT_DOMAIN, category="car", detail=True,
            price_from=None, price_to=None, mileage_from=None, mileage_to=None,
            year_from=None, year_to=None, delay=0.4, verbose=True, session=None):
-    """Search autoscout24.ch for a make/model and return the results in memory.
+    """Search autoscout24.<domain> for a make/model and return the results in memory.
 
     This is the library entry point: it does the same work as the CLI but
     returns a ScrapeResult instead of writing files. The CLI (main(), below)
@@ -352,6 +377,11 @@ def scrape(make, model, *, category="car", detail=True,
     Args:
         make: Make name or key, e.g. "Tesla" or "tesla".
         model: Model name or key, e.g. "Model S" or "model-s".
+        domain: Country domain to scrape, e.g. "ch" (default), matching
+            autoscout24.<domain>. Only "ch" is confirmed to expose this API
+            shape as of this writing (see module docstring) — other values
+            are accepted and will be tried as-is, in case AutoScout24 later
+            exposes the same api.autoscout24.<domain> API for another country.
         category: "car" (default) or "motorcycle".
         detail: If True (default), visit every listing's detail endpoint one
             by one to extract every field the API returns. If False, keep
@@ -365,8 +395,9 @@ def scrape(make, model, *, category="car", detail=True,
             calls). A new one is created if not given.
 
     Returns:
-        A ScrapeResult with `.listings` (raw API objects) and `.rows`
-        (flattened dicts, one per listing, sorted by price).
+        A ScrapeResult with `.listings` (raw API objects, each including a
+        "url" pointing at the original ad) and `.rows` (flattened dicts, one
+        per listing, sorted by price).
     """
     for lo_name, hi_name, lo, hi in (
         ("price_from", "price_to", price_from, price_to),
@@ -380,13 +411,13 @@ def scrape(make, model, *, category="car", detail=True,
 
     if verbose:
         print(f"Resolving make {make!r} ...")
-    make_key, make_name = resolve_make_key(session, make, category)
+    make_key, make_name = resolve_make_key(session, make, category, domain=domain)
     if verbose:
         print(f"  -> make key={make_key!r} name={make_name!r}")
 
     if verbose:
         print(f"Resolving model {model!r} for make {make_name!r} ...")
-    model_key, model_name = resolve_model_key(session, make_key, model, category)
+    model_key, model_name = resolve_model_key(session, make_key, model, category, domain=domain)
     if verbose:
         print(f"  -> model key={model_key!r} name={model_name!r}")
 
@@ -399,20 +430,20 @@ def scrape(make, model, *, category="car", detail=True,
         if year_from is not None or year_to is not None:
             active_filters.append(f"year {year_from or '…'}-{year_to or '…'}")
         filter_note = f" [filters: {', '.join(active_filters)}]" if active_filters else ""
-        print(f"Fetching listings for {make_name} {model_name} (Switzerland, autoscout24.ch){filter_note} ...")
+        print(f"Fetching listings for {make_name} {model_name} (autoscout24.{domain}){filter_note} ...")
 
     listings = search_listings(
         session, make_key, model_key, category, delay=delay, verbose=verbose,
         price_from=price_from, price_to=price_to,
         mileage_from=mileage_from, mileage_to=mileage_to,
-        year_from=year_from, year_to=year_to,
+        year_from=year_from, year_to=year_to, domain=domain,
     )
     total_elements = len(listings)
 
     if detail:
         if verbose:
             print(f"Visiting each of {len(listings)} listings one by one to extract full details ...")
-        listings = visit_all_listings(session, listings, delay=delay, verbose=verbose)
+        listings = visit_all_listings(session, listings, delay=delay, verbose=verbose, domain=domain)
 
     rows = [flatten_listing(item) for item in listings]
     rows.sort(key=lambda r: (r.get("price") in (None, ""), r.get("price")))
@@ -421,7 +452,7 @@ def scrape(make, model, *, category="car", detail=True,
         make_key=make_key, make_name=make_name,
         model_key=model_key, model_name=model_name,
         category=category, total_elements=total_elements,
-        listings=listings, rows=rows,
+        listings=listings, rows=rows, domain=domain,
     )
 
 
@@ -429,6 +460,10 @@ def build_arg_parser():
     parser = argparse.ArgumentParser(description="Scrape autoscout24.ch listings for a given make/model.")
     parser.add_argument("--make", required=True, help="Make name or key, e.g. 'Tesla' or 'tesla'")
     parser.add_argument("--model", required=True, help="Model name or key, e.g. 'Model S' or 'model-s'")
+    parser.add_argument("--domain", default=DEFAULT_DOMAIN,
+                         help=f"Country domain to scrape, matching autoscout24.<domain> "
+                              f"(default: {DEFAULT_DOMAIN!r}). Only 'ch' is confirmed to work "
+                              f"as of this writing; see the module docstring.")
     parser.add_argument("--category", default="car", choices=["car", "motorcycle"],
                          help="Vehicle category (default: car)")
     parser.add_argument("--out", default=None, help="Output file base name (without extension). "
@@ -458,6 +493,7 @@ def main(argv=None):
 
     result = scrape(
         args.make, args.model,
+        domain=args.domain,
         category=args.category,
         detail=not args.no_detail,
         price_from=args.price_from, price_to=args.price_to,

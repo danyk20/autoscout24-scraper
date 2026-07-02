@@ -16,24 +16,25 @@ def patched_pipeline(monkeypatch, summary_listing_factory, detail_listing_factor
     how they were called."""
     calls = {}
 
-    def fake_resolve_make_key(session, make_query, vehicle_category="car"):
-        calls["resolve_make_key"] = (session, make_query, vehicle_category)
+    def fake_resolve_make_key(session, make_query, vehicle_category="car", domain=scraper.DEFAULT_DOMAIN):
+        calls["resolve_make_key"] = (session, make_query, vehicle_category, domain)
         return "tesla", "TESLA"
 
-    def fake_resolve_model_key(session, make_key, model_query, vehicle_category="car"):
-        calls["resolve_model_key"] = (session, make_key, model_query, vehicle_category)
+    def fake_resolve_model_key(session, make_key, model_query, vehicle_category="car",
+                                domain=scraper.DEFAULT_DOMAIN):
+        calls["resolve_model_key"] = (session, make_key, model_query, vehicle_category, domain)
         return "model-s", "MODEL S"
 
     def fake_search_listings(session, make_key, model_key, vehicle_category="car", delay=0.4,
-                              verbose=True, **filters):
+                              verbose=True, domain=scraper.DEFAULT_DOMAIN, **filters):
         calls["search_listings"] = dict(
             make_key=make_key, model_key=model_key, vehicle_category=vehicle_category,
-            delay=delay, verbose=verbose, filters=filters,
+            delay=delay, verbose=verbose, domain=domain, filters=filters,
         )
         return [summary_listing_factory(1, price=200), summary_listing_factory(2, price=100)]
 
-    def fake_visit_all_listings(session, listings, delay=0.4, verbose=True):
-        calls["visit_all_listings"] = dict(listings=listings, delay=delay, verbose=verbose)
+    def fake_visit_all_listings(session, listings, delay=0.4, verbose=True, domain=scraper.DEFAULT_DOMAIN):
+        calls["visit_all_listings"] = dict(listings=listings, delay=delay, verbose=verbose, domain=domain)
         return [detail_listing_factory(item["id"], price=item["price"]) for item in listings]
 
     monkeypatch.setattr(scraper, "resolve_make_key", fake_resolve_make_key)
@@ -71,6 +72,32 @@ def test_scrape_passes_category_through(patched_pipeline):
 
     assert patched_pipeline["resolve_make_key"][2] == "motorcycle"
     assert patched_pipeline["search_listings"]["vehicle_category"] == "motorcycle"
+
+
+def test_scrape_defaults_to_ch_domain(patched_pipeline):
+    result = scraper.scrape("Tesla", "Model S", verbose=False)
+
+    assert result.domain == "ch"
+    assert patched_pipeline["resolve_make_key"][3] == "ch"
+    assert patched_pipeline["resolve_model_key"][4] == "ch"
+    assert patched_pipeline["search_listings"]["domain"] == "ch"
+    assert patched_pipeline["visit_all_listings"]["domain"] == "ch"
+
+
+def test_scrape_passes_custom_domain_through(patched_pipeline):
+    result = scraper.scrape("Tesla", "Model S", domain="de", verbose=False)
+
+    assert result.domain == "de"
+    assert patched_pipeline["resolve_make_key"][3] == "de"
+    assert patched_pipeline["resolve_model_key"][4] == "de"
+    assert patched_pipeline["search_listings"]["domain"] == "de"
+    assert patched_pipeline["visit_all_listings"]["domain"] == "de"
+
+
+def test_scrape_verbose_mentions_domain(patched_pipeline, capsys):
+    scraper.scrape("Tesla", "Model S", domain="de", verbose=True)
+
+    assert "autoscout24.de" in capsys.readouterr().out
 
 
 def test_scrape_passes_all_filters_through(patched_pipeline):

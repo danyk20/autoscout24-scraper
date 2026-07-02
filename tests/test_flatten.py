@@ -125,6 +125,27 @@ def test_flatten_listing_on_full_detail_shape_has_no_seller_object(detail_listin
     assert flat["description"] == "A great car with a long description."
 
 
+def test_flatten_listing_prefers_already_embedded_url(summary_listing_factory):
+    # search_listings()/visit_all_listings() embed a domain-correct "url"
+    # before flatten_listing() ever sees the item; that value must win over
+    # the default-domain URL flatten_listing() would otherwise compute.
+    item = summary_listing_factory(1)
+    item["url"] = "https://www.autoscout24.de/de/d/1"
+
+    flat = scraper.flatten_listing(item)
+
+    assert flat["url"] == "https://www.autoscout24.de/de/d/1"
+
+
+def test_flatten_listing_computes_default_domain_url_when_missing(summary_listing_factory):
+    item = summary_listing_factory(1)
+    assert "url" not in item
+
+    flat = scraper.flatten_listing(item)
+
+    assert flat["url"] == "https://www.autoscout24.ch/de/d/1"
+
+
 def test_flatten_listing_joins_images_list(summary_listing_factory):
     item = summary_listing_factory(1)
     flat = scraper.flatten_listing(item)

@@ -44,6 +44,15 @@ def test_main_translates_required_flags(fake_scrape, tmp_path, monkeypatch):
     assert fake_scrape["model"] == "Model S"
     assert fake_scrape["kwargs"]["category"] == "car"
     assert fake_scrape["kwargs"]["detail"] is True  # detail is on unless --no-detail
+    assert fake_scrape["kwargs"]["domain"] == "ch"  # default domain unless --domain is given
+
+
+def test_main_passes_custom_domain(fake_scrape, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    scraper.main(["--make", "Tesla", "--model", "Model S", "--domain", "de"])
+
+    assert fake_scrape["kwargs"]["domain"] == "de"
 
 
 def test_main_no_detail_flag_disables_detail(fake_scrape, tmp_path, monkeypatch):

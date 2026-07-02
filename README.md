@@ -1,7 +1,16 @@
-# AutoScout24.ch Scraper
+# AutoScout24 Scraper
 
-Fetches every listing for a given make/model from autoscout24.ch (Switzerland),
-for free — no API key, no token, no paid scraping service.
+Fetches every listing for a given make/model from AutoScout24, for free — no
+API key, no token, no paid scraping service. Defaults to the Swiss site
+(`autoscout24.ch`), with an easy-to-use `--domain`/`domain=` override for
+other country domains (see [Domains](#domains) below for what's actually
+confirmed to work today).
+
+**🤖 This project is robot-friendly.** It is explicitly intended to be used
+by AI agents and bots exactly as a human developer would: to run it, read
+its output, import it into another project, or adapt its code. It's released
+under the very permissive [MIT license](LICENSE) specifically so there is no
+ambiguity about that — see [License](#license) below.
 
 ## How it works
 
@@ -43,8 +52,31 @@ flattened into `parent_child` columns, and lists (features, images) are
 joined into a single semicolon-separated cell — so no data from the API
 response is dropped on the way into the CSV.
 
-Results are Switzerland-only by construction, since `api.autoscout24.ch` is
-the `.ch` domain's own backend.
+## Domains
+
+Every function and the CLI accept a `domain` (default `"ch"`), which is
+substituted directly into `https://api.autoscout24.{domain}/v1/...` and
+`https://www.autoscout24.{domain}/...`.
+
+**As of this writing, `ch` is the only domain confirmed to expose this API.**
+AutoScout24's other country sites (`.de`, `.fr`, `.it`, `.be`, `.nl`, `.lu`,
+`.es`, ...) resolve and serve pages, but `api.autoscout24.<domain>` doesn't
+exist for them (checked by DNS lookup) — they run on a different
+product/backend that wasn't reverse-engineered here. Passing e.g.
+`--domain de` today will fail with a network/DNS error, not silently return
+wrong data.
+
+`domain` exists as a parameter (rather than hardcoding `.ch`) so that:
+
+- if AutoScout24 ever exposes the same `api.autoscout24.<domain>` API for
+  another country, this scraper picks it up with zero code changes — just
+  pass the new domain;
+- if you reverse-engineer another country's API yourself, you don't have to
+  fork this project — just call `scrape(..., domain="whatever")` once you've
+  confirmed the endpoint shapes match (or adapt the small number of
+  domain-aware functions if they don't: `api_base()`, `listing_url()`,
+  `resolve_make_key()`, `resolve_model_key()`, `search_listings()`,
+  `fetch_detail()`, `visit_all_listings()`).
 
 ## Setup
 
@@ -80,6 +112,7 @@ directory: `tesla_model-s.csv` and `tesla_model-s.json`.
 |---|---|
 | `--make` | Make name or key, e.g. `Tesla` or `tesla` (required) |
 | `--model` | Model name or key, e.g. `"Model S"` or `model-s` (required) |
+| `--domain` | Country domain, matching `autoscout24.<domain>` (default `ch`). Only `ch` is confirmed to work today — see [Domains](#domains) |
 | `--category` | `car` (default) or `motorcycle` |
 | `--out` | Output file base name, without extension. Defaults to `<make>_<model>` |
 | `--no-detail` | Skip visiting each listing individually; keep only the summary fields from the search results (faster, fewer fields) |
@@ -115,6 +148,9 @@ pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --price-
 
 # Any make/model works
 pipenv run python autoscout24_scraper.py --make BMW --model "M3"
+
+# Explicit domain (defaults to "ch" — see Domains section for what else works today)
+pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --domain ch
 ```
 
 If you mistype a make or model, the script prints a clean error (and for an
@@ -133,8 +169,8 @@ from autoscout24_scraper import scrape
 result = scrape("Tesla", "Model S", price_to=30000, year_from=2018)
 
 result.rows       # list[dict]: one flattened dict per listing, CSV-ready
-result.listings   # list[dict]: raw (unflattened) API JSON per listing
-result.make_name, result.model_name, result.total_elements
+result.listings   # list[dict]: raw (unflattened) API JSON per listing, each with a "url" field
+result.make_name, result.model_name, result.total_elements, result.domain
 
 for row in result.rows:
     print(row["price"], row["mileage"], row["url"])
@@ -144,37 +180,141 @@ result.to_csv("tesla_model_s.csv")
 result.to_json("tesla_model_s.json")
 ```
 
-`scrape()` accepts the same options as the CLI flags (all keyword-only,
-matching the flag names with underscores instead of dashes):
-`category`, `detail` (`True` by default — set `False` for the fast,
-summary-only path), `price_from`/`price_to`, `mileage_from`/`mileage_to`,
-`year_from`/`year_to`, `delay`, `verbose` (set `False` to suppress the
-progress printouts), and `session` (pass your own `requests.Session` to
-reuse connections across multiple `scrape()` calls).
+This section is the authoritative reference for the return types — both for
+a human integrating this into another project, and for an AI agent that
+needs to know exactly what it's going to get back without having to read
+the whole source file.
+
+#### `scrape()` signature
+
+```python
+def scrape(
+    make: str,                       # e.g. "Tesla" or "tesla" — name or key, case-insensitive
+    model: str,                      # e.g. "Model S" or "model-s" — name or key, case-insensitive
+    *,
+    domain: str = "ch",              # autoscout24.<domain>; only "ch" confirmed to work today
+    category: str = "car",           # "car" or "motorcycle"
+    detail: bool = True,             # visit every listing individually for full fields (slower)
+    price_from: int | None = None,   # CHF, inclusive
+    price_to: int | None = None,     # CHF, inclusive
+    mileage_from: int | None = None, # km, inclusive
+    mileage_to: int | None = None,   # km, inclusive
+    year_from: int | None = None,    # first-registration year, inclusive
+    year_to: int | None = None,      # first-registration year, inclusive
+    delay: float = 0.4,              # seconds between HTTP requests
+    verbose: bool = True,            # print progress to stdout
+    session: requests.Session | None = None,  # reuse a session across calls if given
+) -> ScrapeResult:
+    ...
+```
+
+Raises `ValueError` immediately (before any network call) if any `_from` is
+greater than its `_to`. Raises `requests.RequestException` subclasses on
+unrecoverable network errors, and `ValueError` if `make`/`model` can't be
+resolved (the message lists valid models for an unknown-model error).
+
+#### `ScrapeResult` — the return value
+
+```python
+@dataclass
+class ScrapeResult:
+    make_key: str          # resolved make key, e.g. "tesla"
+    make_name: str         # resolved make display name, e.g. "TESLA"
+    model_key: str         # resolved model key, e.g. "model-s"
+    model_name: str        # resolved model display name, e.g. "MODEL S"
+    category: str          # "car" or "motorcycle", as requested
+    total_elements: int    # number of unique listings found by the search phase
+    listings: list[dict]   # raw API objects — see "Data structure" below
+    rows: list[dict]       # flattened dicts, one per listing, CSV-ready, sorted by price ascending
+    domain: str            # domain that was scraped, e.g. "ch"
+
+    def to_csv(self, path: str) -> None: ...   # writes self.rows
+    def to_json(self, path: str) -> None: ...  # writes self.listings
+```
+
+`len(result.rows) == len(result.listings) == result.total_elements` always
+holds (barring `--no-detail`/`detail=False`, where they still match — detail
+mode only adds fields, it never drops or adds listings).
 
 Add this project's directory to your `PYTHONPATH` (or copy
 `autoscout24_scraper.py` alongside your code) so the import resolves; it
 only depends on `requests`, so `pip install requests` in your own project's
-environment is enough — pipenv here is only needed to run this repo's CLI.
+environment is enough — pipenv here is only needed to run this repo's CLI
+and test suite.
 
-## Output fields (CSV)
+## Data structure
 
-By default (full detail mode) every listing yields around 115 columns,
-covering things like: `id, make, model, versionFullName, price,
-previousPrice, conditionType, firstRegistrationYear, mileage, fuelType,
-transmissionType, horsePower, bodyColor, bodyType, doors, seats, driveType,
-batteryCapacity, range, chargingPower, consumption_combined, co2Emission,
-vehicleIdentificationNumber, description, features, images, warranty_type,
-financing_url, insurance_url, sellerName, sellerType, sellerCity,
-sellerZip, url, ...` — plus everything else the detail API happens to
-return. Nested objects are flattened to `parent_child` columns; lists
-(features, images) are joined into one semicolon-separated cell.
+This section documents exactly what's in the output — precisely enough that
+a developer or an AI agent can parse it without having to run the scraper
+first and reverse-engineer the shape themselves.
 
-With `--no-detail`, only the ~20 summary fields from the search results are
-included (id, make, model, price, mileage, seller, teaser, url, ...).
+### JSON (`result.listings` / the `.json` file)
 
-The JSON file always contains the raw, unflattened API response for each
-listing.
+The JSON file (and `ScrapeResult.listings`) is a **JSON array of listing
+objects**, one per vehicle found. Every listing object always includes:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `int` | AutoScout24's internal listing id |
+| `url` | `string` | **Full URL of the original ad** on autoscout24.\<domain\>, e.g. `https://www.autoscout24.ch/de/d/12906672` — added by this scraper (the raw API response does not include it), so you can always click straight back to the source listing |
+| `make` | `object` | `{"id": int, "key": string, "name": string}`, e.g. `{"id": 391, "key": "tesla", "name": "TESLA"}` |
+| `model` | `object` | Same shape as `make`, for the model |
+| `price` | `number \| null` | Asking price in the local currency (CHF for `.ch`) |
+| `mileage` | `int \| null` | Kilometers |
+| `firstRegistrationYear` | `int \| null` | |
+| `fuelType`, `transmissionType`, `conditionType` | `string \| null` | Free-form category strings AutoScout24 uses internally (e.g. `"electric"`, `"automatic"`, `"used"`) |
+
+There are two possible **shapes** for the rest of the object, depending on
+whether detail mode ran:
+
+- **Summary shape** (`detail=False` / `--no-detail`): ~30 fields, exactly
+  what the search endpoint returns — includes a nested `seller` object
+  (`{"name", "type", "city", "zipCode", "id", ...}`) but no VIN, no
+  dimensions, no description.
+- **Detail shape** (`detail=True`, the default): ~90 fields from the
+  per-listing detail endpoint — adds `description` (`string|null`),
+  `vehicleIdentificationNumber` (`string|null`, the VIN), `bodyColor`,
+  `bodyType`, `doors`, `seats`, `driveType`, dimensions (`length`, `width`,
+  `height`, `weightCurb`, `weightTotal`, all `int|null`, in mm/kg), EV
+  specs (`batteryCapacity`, `range`, `chargingPower`, ... `float|int|null`),
+  `warranty` (`object`), `images` (`list[{"key": string}]` — each `key` is a
+  path under `https://listing-images.autoscout24.<domain>/`), `features`
+  (`list[{"feature": string}]`), `financing`/`insurance` (`object` with a
+  `url`), and more. In this shape, `seller` collapses to a bare `sellerId`
+  (`int`) — the detail endpoint doesn't return the seller's name/city/zip,
+  so `visit_all_listings()` copies the `seller` object over from the search
+  summary before overwriting the record, keeping it available either way.
+
+There is no fixed/versioned schema published by AutoScout24 for these
+objects — the tables above reflect the fields observed in practice as of
+this writing. Treat unknown/missing fields defensively (`.get(...)`, not
+`[...]`) since AutoScout24 can add or omit fields per listing.
+
+### CSV (`result.rows` / the `.csv` file)
+
+The CSV is a **flattened** version of the same data — one row per listing,
+same rows/listings correspondence and order. Flattening rules (also
+available programmatically as `flatten_listing()`):
+
+- Nested objects become `parent_child` columns, e.g. `financing.url` →
+  `financing_url`, `warranty.type` → `warranty_type`.
+- `make`/`model` become two columns each: `make`/`makeKey`,
+  `model`/`modelKey`.
+- `seller` becomes `sellerName`, `sellerType`, `sellerCity`, `sellerZip`.
+- Lists are joined into one semicolon-separated cell, e.g. `features` →
+  `"top-list; premium"`, `images` → the semicolon-joined list of image keys.
+- `url` is always present as its own column (same value as the JSON `url`
+  field described above).
+- Columns are the union of every field seen across all rows (heterogeneous
+  listings don't crash the writer — missing values are an empty string),
+  with `id, make, model, versionFullName, price, previousPrice,
+  conditionType, firstRegistrationYear, mileage, fuelType,
+  transmissionType, horsePower, sellerName, sellerType, sellerCity,
+  sellerZip, url` pinned first and everything else sorted alphabetically
+  after them.
+
+In full detail mode (the default) this is around 115-120 columns; with
+`--no-detail`/`detail=False` it's around 20.
 
 ## Testing
 
@@ -219,9 +359,9 @@ What's covered:
 | Area | Unit tests | E2E tests |
 |---|---|---|
 | `request_with_retries` | retry-then-succeed and exhausted-retries paths for 429/5xx/connection errors, no retry on 4xx | — |
-| `resolve_make_key` / `resolve_model_key` | exact key, exact name, substring fallback, not-found errors, category param | real lookups (`Tesla`, `Roadster`), unknown-make error |
-| `search_listings` | pagination + de-dup, stable sort, every filter combination, verbose on/off | real result count, real filter narrowing |
-| `fetch_detail` / `visit_all_listings` | seller backfill, progress printing, per-request delay | real detail fetch |
+| `resolve_make_key` / `resolve_model_key` | exact key, exact name, substring fallback, not-found errors, category param, custom `domain` | real lookups (`Tesla`, `Roadster`), unknown-make error |
+| `search_listings` | pagination + de-dup, stable sort, every filter combination, verbose on/off, custom `domain`, embedded `url` | real result count, real filter narrowing |
+| `fetch_detail` / `visit_all_listings` | seller backfill, progress printing, per-request delay, custom `domain`, embedded `url` | real detail fetch |
 | `flatten_listing` / `_scalarize` / `order_fieldnames` | every branch (nested dicts, lists, missing/unrecognized types) | implicitly, via real data |
 | `save_csv` / `save_json` / `ScrapeResult` | heterogeneous rows, unicode, empty input | round-trip against real files |
 | `scrape()` | orchestration, range validation, filter/session pass-through, sorting | full real pipeline, with and without `--detail` |
@@ -237,3 +377,28 @@ What's covered:
   the module docstring at the top of `autoscout24_scraper.py` documents the
   endpoint shapes in more detail. Run the e2e suite after any such change to
   confirm the fix.
+
+## License
+
+This project is released under the [MIT License](LICENSE) — one of the most
+permissive open-source licenses that exist. In plain terms: you can use,
+copy, modify, merge, publish, distribute, and even sell copies of this code,
+for free, for any purpose, commercial or not, as long as the license text
+stays attached. There is no warranty.
+
+**AI agents, LLM-based coding assistants, and other bots are explicitly
+welcome to use this project** — to run the scraper, to read and parse its
+output, to import `scrape()` into another project, or to read and adapt its
+source code — under exactly the same terms as a human would, with no
+additional restriction and no need to ask permission. That's the whole
+point of the fully-typed [`scrape()` signature and `ScrapeResult`
+reference](#as-a-library-from-another-project) and the [Data
+structure](#data-structure) section above: so a bot reading this file can
+integrate with the code correctly without a human in the loop, same as a
+person reading it would.
+
+The one thing this permissive license does *not* do is grant any rights to
+AutoScout24's own data or terms of service — this project only automates
+requests to a public, unauthenticated endpoint their own website already
+calls from any visitor's browser; what you do with the results is between
+you and them.

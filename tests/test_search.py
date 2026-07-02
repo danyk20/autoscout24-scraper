@@ -135,6 +135,31 @@ def test_search_listings_silent_when_not_verbose(summary_listing_factory, capsys
     assert capsys.readouterr().out == ""
 
 
+@responses.activate
+def test_search_listings_embeds_full_ad_url_on_every_item(summary_listing_factory):
+    listings = [summary_listing_factory(1), summary_listing_factory(2)]
+    responses.add(responses.POST, SEARCH_URL, json=search_page(listings, 1, 2, 0), status=200)
+    session = scraper.make_session()
+
+    result = scraper.search_listings(session, "tesla", "model-s", verbose=False)
+
+    assert result[0]["url"] == "https://www.autoscout24.ch/de/d/1"
+    assert result[1]["url"] == "https://www.autoscout24.ch/de/d/2"
+
+
+@responses.activate
+def test_search_listings_uses_custom_domain_for_api_and_url(summary_listing_factory):
+    listing = summary_listing_factory(1)
+    de_search_url = f"{scraper.api_base('de')}/listings/search"
+    responses.add(responses.POST, de_search_url, json=search_page([listing], 1, 1, 0), status=200)
+    session = scraper.make_session()
+
+    result = scraper.search_listings(session, "tesla", "model-s", verbose=False, domain="de")
+
+    assert result[0]["url"] == "https://www.autoscout24.de/de/d/1"
+    assert responses.calls[0].request.url.startswith(de_search_url)
+
+
 DETAIL_URL_TEMPLATE = f"{scraper.API_BASE}/listings/{{id}}"
 
 
@@ -145,6 +170,18 @@ def test_fetch_detail(detail_listing_factory):
     session = scraper.make_session()
 
     result = scraper.fetch_detail(session, 42)
+
+    assert result == detail
+
+
+@responses.activate
+def test_fetch_detail_uses_custom_domain(detail_listing_factory):
+    detail = detail_listing_factory(42)
+    de_detail_url = f"{scraper.api_base('de')}/listings/42"
+    responses.add(responses.GET, de_detail_url, json=detail, status=200)
+    session = scraper.make_session()
+
+    result = scraper.fetch_detail(session, 42, domain="de")
 
     assert result == detail
 
@@ -173,6 +210,29 @@ def test_visit_all_listings_merges_seller_and_returns_detail_shape(
 
 
 @responses.activate
+def test_visit_all_listings_embeds_full_ad_url(summary_listing_factory, detail_listing_factory):
+    summary_items = [summary_listing_factory(7)]
+    responses.add(responses.GET, DETAIL_URL_TEMPLATE.format(id=7), json=detail_listing_factory(7), status=200)
+    session = scraper.make_session()
+
+    result = scraper.visit_all_listings(session, summary_items, delay=0, verbose=False)
+
+    assert result[0]["url"] == "https://www.autoscout24.ch/de/d/7"
+
+
+@responses.activate
+def test_visit_all_listings_uses_custom_domain_for_api_and_url(summary_listing_factory, detail_listing_factory):
+    summary_items = [summary_listing_factory(7)]
+    de_detail_url = f"{scraper.api_base('de')}/listings/7"
+    responses.add(responses.GET, de_detail_url, json=detail_listing_factory(7), status=200)
+    session = scraper.make_session()
+
+    result = scraper.visit_all_listings(session, summary_items, delay=0, verbose=False, domain="de")
+
+    assert result[0]["url"] == "https://www.autoscout24.de/de/d/7"
+
+
+@responses.activate
 def test_visit_all_listings_prints_progress_every_ten_and_at_end(summary_listing_factory, capsys):
     items = [summary_listing_factory(i) for i in range(1, 12)]
     for item in items:
@@ -188,3 +248,16 @@ def test_visit_all_listings_prints_progress_every_ten_and_at_end(summary_listing
 
 def test_listing_url_format():
     assert scraper.listing_url(12345) == "https://www.autoscout24.ch/de/d/12345"
+
+
+def test_listing_url_with_custom_domain():
+    assert scraper.listing_url(12345, domain="de") == "https://www.autoscout24.de/de/d/12345"
+
+
+def test_api_base_default_is_ch():
+    assert scraper.api_base() == "https://api.autoscout24.ch/v1"
+    assert scraper.api_base() == scraper.API_BASE
+
+
+def test_api_base_with_custom_domain():
+    assert scraper.api_base("fr") == "https://api.autoscout24.fr/v1"
