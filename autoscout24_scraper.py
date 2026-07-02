@@ -21,10 +21,16 @@ Pagination is fixed at size=20 per page (other sizes return 400). The API
 sometimes reshuffles a "top-list" (boosted/sponsored) listing into position 0,
 so listings are de-duplicated by id while paging.
 
+After the search phase collects every listing id, the scraper visits each
+listing's detail endpoint one by one (GET /v1/listings/{id}) and extracts
+every field it returns (not just the summary fields from the search
+response). This is slower (one request per listing) but gives full specs:
+battery/range, dimensions, VIN, colors, equipment, description, etc.
+
 Usage:
     python3 autoscout24_scraper.py --make tesla --model model-s
     python3 autoscout24_scraper.py --make "Tesla" --model "Model S" --out tesla_model_s
-    python3 autoscout24_scraper.py --make tesla --model model-s --detail   # fetch full detail per listing (slower)
+    python3 autoscout24_scraper.py --make tesla --model model-s --no-detail   # skip per-listing detail fetch (faster, fewer fields)
 """
 import argparse
 import csv
@@ -170,45 +176,101 @@ def fetch_detail(session, listing_id):
     return resp.json()
 
 
+def visit_all_listings(session, listings, delay=0.4, verbose=True):
+    """Visit each listing's detail endpoint one by one and merge the result.
+
+    The detail endpoint (GET /v1/listings/{id}) returns far more fields than
+    the search endpoint (battery/range, dimensions, VIN, colors, equipment,
+    description, ...) but drops the seller name/city/zip/type down to a bare
+    sellerId, so we keep whatever the search response already had for that.
+    """
+    visited = []
+    total = len(listings)
+    for i, item in enumerate(listings, 1):
+        listing_id = item["id"]
+        detail = fetch_detail(session, listing_id)
+        if "seller" in item:
+            detail.setdefault("seller", item["seller"])
+        visited.append(detail)
+        if verbose and (i % 10 == 0 or i == total):
+            print(f"  visited {i}/{total} listings (id={listing_id})")
+        if i < total:
+            time.sleep(delay)
+    return visited
+
+
 def listing_url(listing_id):
     return f"https://www.autoscout24.ch/de/d/{listing_id}"
 
 
+# Fields worth pulling to the front of the CSV; everything else discovered on
+# the listing objects is appended afterwards, sorted alphabetically, so no
+# field the API returns is ever silently dropped.
+PRIORITY_FIELDS = [
+    "id", "make", "model", "versionFullName", "price", "previousPrice",
+    "conditionType", "firstRegistrationYear", "mileage", "fuelType",
+    "transmissionType", "horsePower", "sellerName", "sellerType",
+    "sellerCity", "sellerZip", "url",
+]
+
+
+def _scalarize(value):
+    """Turn a nested dict/list value into something that fits one CSV cell."""
+    if value is None:
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        # A handful of nested objects have an obvious "main" field.
+        for key in ("name", "feature", "key", "providerName", "type"):
+            if key in value and not isinstance(value[key], (dict, list)):
+                return value[key]
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    if isinstance(value, list):
+        return "; ".join(str(_scalarize(v)) for v in value)
+    return str(value)
+
+
 def flatten_listing(item):
-    make = item.get("make") or {}
-    model = item.get("model") or {}
-    seller = item.get("seller") or {}
-    return {
-        "id": item.get("id"),
-        "make": make.get("name"),
-        "model": model.get("name"),
-        "version": item.get("versionFullName"),
-        "price_chf": item.get("price"),
-        "previous_price_chf": item.get("previousPrice"),
-        "first_registration_year": item.get("firstRegistrationYear"),
-        "mileage_km": item.get("mileage"),
-        "fuel_type": item.get("fuelType"),
-        "transmission_type": item.get("transmissionType"),
-        "horse_power": item.get("horsePower"),
-        "condition": item.get("conditionType"),
-        "had_accident": item.get("hadAccident"),
-        "inspected": item.get("inspected"),
-        "seller_name": seller.get("name"),
-        "seller_type": seller.get("type"),
-        "seller_city": seller.get("city"),
-        "seller_zip": seller.get("zipCode"),
-        "teaser": item.get("teaser"),
-        "url": listing_url(item.get("id")),
-    }
+    """Flatten a listing (search-result or full-detail shape) into one flat
+    dict covering every field the API returned for it, so nothing is lost."""
+    flat = {}
+    for key, value in item.items():
+        if key == "seller" and isinstance(value, dict):
+            flat["sellerName"] = value.get("name")
+            flat["sellerType"] = value.get("type")
+            flat["sellerCity"] = value.get("city")
+            flat["sellerZip"] = value.get("zipCode")
+            continue
+        if key in ("make", "model") and isinstance(value, dict):
+            flat[key] = value.get("name")
+            flat[f"{key}Key"] = value.get("key")
+            continue
+        if isinstance(value, dict):
+            for sub_key, sub_value in value.items():
+                flat[f"{key}_{sub_key}"] = _scalarize(sub_value)
+            continue
+        flat[key] = _scalarize(value)
+    flat["url"] = listing_url(item.get("id"))
+    return flat
+
+
+def order_fieldnames(all_keys):
+    ordered = [f for f in PRIORITY_FIELDS if f in all_keys]
+    remaining = sorted(k for k in all_keys if k not in ordered)
+    return ordered + remaining
 
 
 def save_csv(rows, path):
     if not rows:
         print("  [warn] no rows to write")
         return
-    fieldnames = list(rows[0].keys())
+    all_keys = set()
+    for row in rows:
+        all_keys.update(row.keys())
+    fieldnames = order_fieldnames(all_keys)
     with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, restval="")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -226,9 +288,10 @@ def main():
                          help="Vehicle category (default: car)")
     parser.add_argument("--out", default=None, help="Output file base name (without extension). "
                                                       "Defaults to '<make>_<model>' in the current directory.")
-    parser.add_argument("--detail", action="store_true",
-                         help="Fetch the full detail record for every listing (slower, more fields).")
-    parser.add_argument("--delay", type=float, default=0.4, help="Delay in seconds between page requests.")
+    parser.add_argument("--no-detail", action="store_true",
+                         help="Skip visiting each listing's detail page; keep only the summary "
+                              "fields from the search results (faster, fewer fields).")
+    parser.add_argument("--delay", type=float, default=0.4, help="Delay in seconds between requests.")
     args = parser.parse_args()
 
     session = make_session()
@@ -244,23 +307,12 @@ def main():
     print(f"Fetching listings for {make_name} {model_name} (Switzerland, autoscout24.ch) ...")
     raw_listings = search_listings(session, make_key, model_key, args.category, delay=args.delay)
 
-    if args.detail:
-        print(f"Fetching full detail for {len(raw_listings)} listings ...")
-        detailed = []
-        for i, item in enumerate(raw_listings, 1):
-            detail = fetch_detail(session, item["id"])
-            # The detail endpoint only returns a bare sellerId, not the seller
-            # name/city/zip/type that the search endpoint provides. Keep those.
-            if "seller" in item:
-                detail.setdefault("seller", item["seller"])
-            detailed.append(detail)
-            if i % 10 == 0 or i == len(raw_listings):
-                print(f"  {i}/{len(raw_listings)}")
-            time.sleep(args.delay)
-        raw_listings = detailed
+    if not args.no_detail:
+        print(f"Visiting each of {len(raw_listings)} listings one by one to extract full details ...")
+        raw_listings = visit_all_listings(session, raw_listings, delay=args.delay)
 
     rows = [flatten_listing(item) for item in raw_listings]
-    rows.sort(key=lambda r: (r["price_chf"] is None, r["price_chf"]))
+    rows.sort(key=lambda r: (r.get("price") in (None, ""), r.get("price")))
 
     out_base = args.out or f"{make_key}_{model_key}"
     csv_path = f"{out_base}.csv"

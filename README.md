@@ -18,8 +18,8 @@ real website makes while searching. The scraper talks to that API directly:
 |---|---|
 | `GET /v1/makes` | list of all makes (name + internal key) |
 | `GET /v1/makes/key/{make}/models` | list of all models for a make |
-| `POST /v1/listings/search` | the actual search, paginated 20 results at a time |
-| `GET /v1/listings/{id}` | full detail record for one listing (used only with `--detail`) |
+| `POST /v1/listings/search` | the search, paginated 20 results at a time — used to collect every listing id |
+| `GET /v1/listings/{id}` | full detail record for one listing — visited once per listing by default |
 
 One quirk had to be worked around: without an explicit sort order, the API
 rotates a "boosted" listing into the first slot on every request, which
@@ -27,6 +27,21 @@ shifts the pagination window and causes some listings to be skipped or
 duplicated across pages. The scraper always sorts by price
 (`sort: [{"type": "PRICE", "order": "ASC"}]`) to make pagination stable, and
 also de-duplicates by listing ID as a safety net.
+
+**Two-phase scraping.** The search endpoint only returns a summary per
+listing (~30 fields). To get everything (battery/range, dimensions, VIN,
+colors, equipment, full description, every image, ...), the scraper visits
+each listing individually, one by one, via its detail endpoint, after the
+search phase has collected every id. That's one extra HTTP request per
+listing, with a short delay between requests — so a search that matches 173
+cars makes 173 extra requests. Use `--no-detail` to skip this and keep only
+the fast summary fields.
+
+Every field the API returns for a listing is extracted — nested objects
+(seller, financing, consumption, warranty, boot dimensions, ...) are
+flattened into `parent_child` columns, and lists (features, images) are
+joined into a single semicolon-separated cell — so no data from the API
+response is dropped on the way into the CSV.
 
 Results are Switzerland-only by construction, since `api.autoscout24.ch` is
 the `.ch` domain's own backend.
@@ -47,7 +62,8 @@ pipenv install
 pipenv run python autoscout24_scraper.py --make Tesla --model "Model S"
 ```
 
-This prints progress per page and writes two output files in the current
+This prints progress per search page, then visits every matching listing one
+by one to pull full details, and writes two output files in the current
 directory: `tesla_model-s.csv` and `tesla_model-s.json`.
 
 ### Options
@@ -58,20 +74,20 @@ directory: `tesla_model-s.csv` and `tesla_model-s.json`.
 | `--model` | Model name or key, e.g. `"Model S"` or `model-s` (required) |
 | `--category` | `car` (default) or `motorcycle` |
 | `--out` | Output file base name, without extension. Defaults to `<make>_<model>` |
-| `--detail` | Fetch the full technical detail record for every listing (one extra request per car — slower, more fields, e.g. battery capacity, VIN, dimensions) |
+| `--no-detail` | Skip visiting each listing individually; keep only the summary fields from the search results (faster, fewer fields) |
 | `--delay` | Seconds to wait between requests (default `0.4`) — raise this if you get rate-limited |
 
 ### Examples
 
 ```bash
-# Basic search
+# Full run: search + visit every listing for full details (default)
 pipenv run python autoscout24_scraper.py --make Tesla --model "Model 3"
 
 # Custom output filename
 pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --out my_search
 
-# Full technical detail per listing (slower)
-pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --detail
+# Fast mode: search results only, skip visiting each listing
+pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --no-detail
 
 # Any make/model works
 pipenv run python autoscout24_scraper.py --make BMW --model "M3"
@@ -82,13 +98,22 @@ unknown model, the list of valid models for that make) instead of crashing.
 
 ## Output fields (CSV)
 
-`id, make, model, version, price_chf, previous_price_chf,
-first_registration_year, mileage_km, fuel_type, transmission_type,
-horse_power, condition, had_accident, inspected, seller_name, seller_type,
-seller_city, seller_zip, teaser, url`
+By default (full detail mode) every listing yields around 115 columns,
+covering things like: `id, make, model, versionFullName, price,
+previousPrice, conditionType, firstRegistrationYear, mileage, fuelType,
+transmissionType, horsePower, bodyColor, bodyType, doors, seats, driveType,
+batteryCapacity, range, chargingPower, consumption_combined, co2Emission,
+vehicleIdentificationNumber, description, features, images, warranty_type,
+financing_url, insurance_url, sellerName, sellerType, sellerCity,
+sellerZip, url, ...` — plus everything else the detail API happens to
+return. Nested objects are flattened to `parent_child` columns; lists
+(features, images) are joined into one semicolon-separated cell.
 
-The JSON file contains the raw, unflattened API response for each listing
-(more fields, e.g. images, financing/insurance links).
+With `--no-detail`, only the ~20 summary fields from the search results are
+included (id, make, model, price, mileage, seller, teaser, url, ...).
+
+The JSON file always contains the raw, unflattened API response for each
+listing.
 
 ## Notes
 
