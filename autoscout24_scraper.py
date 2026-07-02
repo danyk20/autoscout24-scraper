@@ -27,10 +27,15 @@ every field it returns (not just the summary fields from the search
 response). This is slower (one request per listing) but gives full specs:
 battery/range, dimensions, VIN, colors, equipment, description, etc.
 
+Optional range filters (price, mileage, first-registration year) map
+directly onto the search API's own filters: priceFrom/priceTo,
+mileageFrom/mileageTo, firstRegistrationYearFrom/firstRegistrationYearTo.
+
 Usage:
     python3 autoscout24_scraper.py --make tesla --model model-s
     python3 autoscout24_scraper.py --make "Tesla" --model "Model S" --out tesla_model_s
     python3 autoscout24_scraper.py --make tesla --model model-s --no-detail   # skip per-listing detail fetch (faster, fewer fields)
+    python3 autoscout24_scraper.py --make tesla --model model-s --price-to 30000 --year-from 2018
 """
 import argparse
 import csv
@@ -121,7 +126,9 @@ def resolve_model_key(session, make_key, model_query, vehicle_category="car"):
                       f"Available models: {available}")
 
 
-def search_listings(session, make_key, model_key, vehicle_category="car", delay=0.4, verbose=True):
+def search_listings(session, make_key, model_key, vehicle_category="car", delay=0.4, verbose=True,
+                     price_from=None, price_to=None, mileage_from=None, mileage_to=None,
+                     year_from=None, year_to=None):
     """Fetch every listing for a given make/model, deduplicated by id.
 
     Sorting explicitly by price is important: with no sort specified, the API
@@ -129,11 +136,29 @@ def search_listings(session, make_key, model_key, vehicle_category="car", delay=
     request, which shifts the rest of the page window and causes listings to
     be skipped or duplicated across pages. A stable sort makes pagination
     deterministic and yields the full result set.
+
+    price_from/price_to, mileage_from/mileage_to and year_from/year_to are
+    all optional and map directly onto the API's own range filters
+    (priceFrom/priceTo, mileageFrom/mileageTo,
+    firstRegistrationYearFrom/firstRegistrationYearTo). Leave any of them as
+    None to not filter on that dimension.
     """
     query = {
         "vehicleCategories": [vehicle_category],
         "makeModelVersions": [{"makeKey": make_key, "modelKey": model_key}],
     }
+    if price_from is not None:
+        query["priceFrom"] = price_from
+    if price_to is not None:
+        query["priceTo"] = price_to
+    if mileage_from is not None:
+        query["mileageFrom"] = mileage_from
+    if mileage_to is not None:
+        query["mileageTo"] = mileage_to
+    if year_from is not None:
+        query["firstRegistrationYearFrom"] = year_from
+    if year_to is not None:
+        query["firstRegistrationYearTo"] = year_to
     sort = [{"type": "PRICE", "order": "ASC"}]
 
     seen_ids = set()
@@ -292,7 +317,23 @@ def main():
                          help="Skip visiting each listing's detail page; keep only the summary "
                               "fields from the search results (faster, fewer fields).")
     parser.add_argument("--delay", type=float, default=0.4, help="Delay in seconds between requests.")
+    parser.add_argument("--price-from", type=int, default=None, help="Minimum price in CHF (inclusive).")
+    parser.add_argument("--price-to", type=int, default=None, help="Maximum price in CHF (inclusive).")
+    parser.add_argument("--mileage-from", type=int, default=None, help="Minimum mileage in km (inclusive).")
+    parser.add_argument("--mileage-to", type=int, default=None, help="Maximum mileage in km (inclusive).")
+    parser.add_argument("--year-from", type=int, default=None,
+                         help="Earliest first-registration year (inclusive).")
+    parser.add_argument("--year-to", type=int, default=None,
+                         help="Latest first-registration year (inclusive).")
     args = parser.parse_args()
+
+    for lo_name, hi_name, lo, hi in (
+        ("--price-from", "--price-to", args.price_from, args.price_to),
+        ("--mileage-from", "--mileage-to", args.mileage_from, args.mileage_to),
+        ("--year-from", "--year-to", args.year_from, args.year_to),
+    ):
+        if lo is not None and hi is not None and lo > hi:
+            raise ValueError(f"{lo_name} ({lo}) cannot be greater than {hi_name} ({hi})")
 
     session = make_session()
 
@@ -304,8 +345,22 @@ def main():
     model_key, model_name = resolve_model_key(session, make_key, args.model, args.category)
     print(f"  -> model key={model_key!r} name={model_name!r}")
 
-    print(f"Fetching listings for {make_name} {model_name} (Switzerland, autoscout24.ch) ...")
-    raw_listings = search_listings(session, make_key, model_key, args.category, delay=args.delay)
+    active_filters = []
+    if args.price_from is not None or args.price_to is not None:
+        active_filters.append(f"price {args.price_from or 0}-{args.price_to or '∞'} CHF")
+    if args.mileage_from is not None or args.mileage_to is not None:
+        active_filters.append(f"mileage {args.mileage_from or 0}-{args.mileage_to or '∞'} km")
+    if args.year_from is not None or args.year_to is not None:
+        active_filters.append(f"year {args.year_from or '…'}-{args.year_to or '…'}")
+    filter_note = f" [filters: {', '.join(active_filters)}]" if active_filters else ""
+
+    print(f"Fetching listings for {make_name} {model_name} (Switzerland, autoscout24.ch){filter_note} ...")
+    raw_listings = search_listings(
+        session, make_key, model_key, args.category, delay=args.delay,
+        price_from=args.price_from, price_to=args.price_to,
+        mileage_from=args.mileage_from, mileage_to=args.mileage_to,
+        year_from=args.year_from, year_to=args.year_to,
+    )
 
     if not args.no_detail:
         print(f"Visiting each of {len(raw_listings)} listings one by one to extract full details ...")

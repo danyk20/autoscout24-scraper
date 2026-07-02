@@ -76,6 +76,13 @@ directory: `tesla_model-s.csv` and `tesla_model-s.json`.
 | `--out` | Output file base name, without extension. Defaults to `<make>_<model>` |
 | `--no-detail` | Skip visiting each listing individually; keep only the summary fields from the search results (faster, fewer fields) |
 | `--delay` | Seconds to wait between requests (default `0.4`) — raise this if you get rate-limited |
+| `--price-from` / `--price-to` | Filter by price in CHF (inclusive, either end optional) |
+| `--mileage-from` / `--mileage-to` | Filter by mileage in km (inclusive, either end optional) |
+| `--year-from` / `--year-to` | Filter by first-registration year (inclusive, either end optional) |
+
+All three filters are optional and combine with AND. They're applied by the
+search API itself (not filtered client-side afterwards), so they also cut
+down how many listings get visited in the detail phase.
 
 ### Examples
 
@@ -88,6 +95,15 @@ pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --out my
 
 # Fast mode: search results only, skip visiting each listing
 pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --no-detail
+
+# Only cars under CHF 30'000
+pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --price-to 30000
+
+# 2018 or newer, under 60'000 km
+pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --year-from 2018 --mileage-to 60000
+
+# Price range plus year range together
+pipenv run python autoscout24_scraper.py --make Tesla --model "Model S" --price-from 20000 --price-to 50000 --year-from 2019
 
 # Any make/model works
 pipenv run python autoscout24_scraper.py --make BMW --model "M3"
