@@ -1,6 +1,7 @@
 # AutoScout24 Scraper
 
 [![CI](https://github.com/danyk20/autoscout24-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/danyk20/autoscout24-scraper/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/autoscout24-scraper)](https://pypi.org/project/autoscout24-scraper/)
 [![Coverage](https://img.shields.io/badge/unit%20test%20coverage-100%25-brightgreen)](#testing)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
@@ -282,12 +283,16 @@ mode only adds fields, it never drops or adds listings).
 Install it into your own project's environment with:
 
 ```bash
-pip install git+https://github.com/danyk20/autoscout24-scraper.git
+pip install autoscout24-scraper
 ```
 
-This also gives you a real `autoscout24-scraper` command (see `--version`
-below), not just the importable module — pipenv is only needed if you're
-working on this repo itself (running its CLI from source, or its test suite).
+(Not yet published? Install the latest unreleased code straight from GitHub
+instead: `pip install git+https://github.com/danyk20/autoscout24-scraper.git`.)
+
+Either way you also get a real `autoscout24-scraper` command (see
+`--version` below), not just the importable module — pipenv is only needed
+if you're working on this repo itself (running its CLI from source, or its
+test suite).
 
 ## Data structure
 

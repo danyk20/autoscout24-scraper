@@ -46,3 +46,30 @@ pipenv run pytest -m e2e --no-cov
 
 Open a GitHub issue using the bug report template — include the exact
 command you ran and, if relevant, the raw API response you got back.
+
+## Releasing (maintainer only)
+
+Publishing to PyPI is automated via `.github/workflows/release.yml` using
+PyPI Trusted Publishing (no API tokens stored anywhere) — pushing a tag is
+the only manual step:
+
+1. Bump `__version__` in `autoscout24_scraper.py`.
+2. Add a new entry at the top of `CHANGELOG.md` (Keep a Changelog format).
+3. Commit those two changes, then tag and push:
+   ```bash
+   git commit -am "Release vX.Y.Z"
+   git tag vX.Y.Z
+   git push origin master
+   git push origin vX.Y.Z
+   ```
+4. The release workflow verifies `__version__` matches the tag (fails fast
+   if they disagree), builds, publishes to TestPyPI, then to real PyPI.
+   Watch the Actions tab.
+5. To dry-run the pipeline without a real release, push a pre-release tag
+   instead (e.g. `vX.Y.Z-rc1`) — it publishes to TestPyPI only and never
+   reaches real PyPI, since the version/tag check and the real-PyPI job
+   both key off an exact `vX.Y.Z` tag.
+
+One-time setup this depends on (already documented, done once): a Trusted
+Publisher registered on both pypi.org and test.pypi.org for this repo, and
+matching GitHub Environments named `pypi`/`testpypi`.

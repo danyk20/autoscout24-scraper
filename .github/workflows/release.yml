@@ -25,12 +25,16 @@ jobs:
           import sys
 
           tag = "${{ github.ref_name }}".lstrip("v")
+          # A dry-run pre-release tag (e.g. v0.1.0-rc1) is expected to match
+          # __version__ on its base version only - the "-rc1" suffix is just
+          # a marker to route it through TestPyPI, not a real version bump.
+          base_version = tag.split("-", 1)[0]
           content = open("autoscout24_scraper.py").read()
           match = re.search(r'__version__\s*=\s*"([^"]+)"', content)
           version = match.group(1) if match else None
 
-          print(f"tag={tag!r} __version__={version!r}")
-          if version != tag:
+          print(f"tag={tag!r} base_version={base_version!r} __version__={version!r}")
+          if version != base_version:
               print("::error::__version__ does not match the pushed tag - fix before releasing")
               sys.exit(1)
           EOF
