@@ -1,4 +1,5 @@
 """Unit tests for resolve_make_key() and resolve_model_key()."""
+
 import pytest
 import responses
 

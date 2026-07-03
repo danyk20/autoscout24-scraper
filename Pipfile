@@ -4,13 +4,15 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-requests = "*"
+requests = "~=2.34"
 
 [dev-packages]
-pytest = "*"
-pytest-cov = "*"
-responses = "*"
+pytest = "~=9.1"
+pytest-cov = "~=7.1"
+responses = "~=0.26"
+ruff = "~=0.15"
+mypy = "~=2.1"
+types-requests = "~=2.33"
 
 [requires]
 python_version = "3.12"
-python_full_version = "3.12.5"

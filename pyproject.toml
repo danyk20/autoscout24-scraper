@@ -8,3 +8,26 @@ pythonpath = ["."]
 
 [tool.coverage.run]
 source = ["autoscout24_scraper"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (modern syntax)
+    "B",   # flake8-bugbear (common footguns)
+]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["autoscout24_scraper.py"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+# Permissive on purpose: this is a small single-file utility, not chasing
+# --strict. The goal is catching real mismatches, not maximal rigor.

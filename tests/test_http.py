@@ -1,4 +1,6 @@
 """Unit tests for make_session() and request_with_retries()."""
+
+import pytest
 import requests
 import responses
 
@@ -54,11 +56,9 @@ def test_request_with_retries_raises_after_exhausting_retries_on_persistent_500(
         responses.add(responses.GET, "https://example.test/always500", status=500)
     session = scraper.make_session()
 
-    try:
+    with pytest.raises(requests.HTTPError) as excinfo:
         scraper.request_with_retries(session, "GET", "https://example.test/always500", max_retries=5)
-        assert False, "expected HTTPError"
-    except requests.HTTPError as exc:
-        assert exc.response.status_code == 500
+    assert excinfo.value.response.status_code == 500
     assert len(responses.calls) == 5
 
 
@@ -67,11 +67,9 @@ def test_request_with_retries_does_not_retry_on_client_error():
     responses.add(responses.GET, "https://example.test/notfound", status=404)
     session = scraper.make_session()
 
-    try:
+    with pytest.raises(requests.HTTPError) as excinfo:
         scraper.request_with_retries(session, "GET", "https://example.test/notfound")
-        assert False, "expected HTTPError"
-    except requests.HTTPError as exc:
-        assert exc.response.status_code == 404
+    assert excinfo.value.response.status_code == 404
     # 404 is not retried - only one call should have been made.
     assert len(responses.calls) == 1
 
@@ -79,7 +77,8 @@ def test_request_with_retries_does_not_retry_on_client_error():
 @responses.activate
 def test_request_with_retries_retries_on_connection_error_then_succeeds(no_sleep):
     responses.add(
-        responses.GET, "https://example.test/conn-flaky",
+        responses.GET,
+        "https://example.test/conn-flaky",
         body=requests.ConnectionError("boom"),
     )
     responses.add(responses.GET, "https://example.test/conn-flaky", json={"ok": True}, status=200)
@@ -95,14 +94,12 @@ def test_request_with_retries_retries_on_connection_error_then_succeeds(no_sleep
 def test_request_with_retries_raises_after_exhausting_retries_on_connection_error(no_sleep):
     for _ in range(3):
         responses.add(
-            responses.GET, "https://example.test/always-down",
+            responses.GET,
+            "https://example.test/always-down",
             body=requests.ConnectionError("boom"),
         )
     session = scraper.make_session()
 
-    try:
+    with pytest.raises(requests.ConnectionError):
         scraper.request_with_retries(session, "GET", "https://example.test/always-down", max_retries=3)
-        assert False, "expected ConnectionError"
-    except requests.ConnectionError:
-        pass
     assert len(responses.calls) == 3

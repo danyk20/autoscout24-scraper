@@ -4,6 +4,7 @@ The sample payloads below mirror the real shapes returned by
 api.autoscout24.ch (captured by hand while reverse-engineering the API) so
 that mocked HTTP responses exercise the same code paths real ones would.
 """
+
 import pytest
 
 import autoscout24_scraper as scraper

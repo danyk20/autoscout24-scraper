@@ -9,6 +9,7 @@ They intentionally target Tesla Roadster, which has a small, stable
 inventory (order of ~10 listings) so the full detail-visiting pipeline and
 the CLI subprocess test both run quickly without hammering the API.
 """
+
 import csv
 import json
 import subprocess
@@ -127,12 +128,19 @@ def test_cli_subprocess_end_to_end_writes_real_files(tmp_path):
 
     proc = subprocess.run(
         [
-            sys.executable, SCRIPT_PATH,
-            "--make", "Tesla", "--model", "Roadster",
+            sys.executable,
+            SCRIPT_PATH,
+            "--make",
+            "Tesla",
+            "--model",
+            "Roadster",
             "--no-detail",  # keep the e2e suite fast
-            "--out", str(out_base),
+            "--out",
+            str(out_base),
         ],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
 
     assert proc.returncode == 0, proc.stderr
@@ -151,11 +159,18 @@ def test_cli_subprocess_end_to_end_writes_real_files(tmp_path):
 def test_cli_subprocess_unknown_make_exits_with_error(tmp_path):
     proc = subprocess.run(
         [
-            sys.executable, SCRIPT_PATH,
-            "--make", "not-a-real-make-xyz", "--model", "whatever",
-            "--out", str(tmp_path / "should_not_exist"),
+            sys.executable,
+            SCRIPT_PATH,
+            "--make",
+            "not-a-real-make-xyz",
+            "--model",
+            "whatever",
+            "--out",
+            str(tmp_path / "should_not_exist"),
         ],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
 
     assert proc.returncode == 1

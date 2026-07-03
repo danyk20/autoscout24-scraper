@@ -4,9 +4,9 @@ scrape() itself is monkeypatched here so these tests never touch the
 network; they only verify that CLI flags are translated into the right
 scrape() call and that files get written to the right place.
 """
+
 import csv
 import json
-import os
 
 import pytest
 import requests
@@ -23,9 +23,12 @@ def fake_scrape(monkeypatch):
         calls["model"] = model
         calls["kwargs"] = kwargs
         return scraper.ScrapeResult(
-            make_key="tesla", make_name="TESLA",
-            model_key="model-s", model_name="MODEL S",
-            category=kwargs.get("category", "car"), total_elements=1,
+            make_key="tesla",
+            make_name="TESLA",
+            model_key="model-s",
+            model_name="MODEL S",
+            category=kwargs.get("category", "car"),
+            total_elements=1,
             listings=[{"id": 1, "price": 100}],
             rows=[{"id": 1, "price": 100, "url": "https://www.autoscout24.ch/de/d/1"}],
         )
@@ -66,12 +69,26 @@ def test_main_no_detail_flag_disables_detail(fake_scrape, tmp_path, monkeypatch)
 def test_main_passes_range_filters(fake_scrape, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    scraper.main([
-        "--make", "Tesla", "--model", "Model S",
-        "--price-from", "1000", "--price-to", "2000",
-        "--mileage-from", "10", "--mileage-to", "20",
-        "--year-from", "2015", "--year-to", "2020",
-    ])
+    scraper.main(
+        [
+            "--make",
+            "Tesla",
+            "--model",
+            "Model S",
+            "--price-from",
+            "1000",
+            "--price-to",
+            "2000",
+            "--mileage-from",
+            "10",
+            "--mileage-to",
+            "20",
+            "--year-from",
+            "2015",
+            "--year-to",
+            "2020",
+        ]
+    )
 
     kwargs = fake_scrape["kwargs"]
     assert kwargs["price_from"] == 1000
@@ -148,6 +165,7 @@ def test_main_rejects_unknown_category(fake_scrape):
 
 # --- run_cli() error-handling / exit codes --------------------------------
 
+
 def test_run_cli_returns_zero_on_success(fake_scrape, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
@@ -159,6 +177,7 @@ def test_run_cli_returns_zero_on_success(fake_scrape, tmp_path, monkeypatch):
 def test_run_cli_returns_one_and_prints_error_on_value_error(monkeypatch, capsys):
     def boom(argv=None):
         raise ValueError("no such make")
+
     monkeypatch.setattr(scraper, "main", boom)
 
     exit_code = scraper.run_cli([])
@@ -170,6 +189,7 @@ def test_run_cli_returns_one_and_prints_error_on_value_error(monkeypatch, capsys
 def test_run_cli_returns_one_and_prints_message_on_network_error(monkeypatch, capsys):
     def boom(argv=None):
         raise requests.ConnectionError("dns failure")
+
     monkeypatch.setattr(scraper, "main", boom)
 
     exit_code = scraper.run_cli([])
@@ -181,6 +201,7 @@ def test_run_cli_returns_one_and_prints_message_on_network_error(monkeypatch, ca
 def test_run_cli_returns_130_on_keyboard_interrupt(monkeypatch, capsys):
     def boom(argv=None):
         raise KeyboardInterrupt()
+
     monkeypatch.setattr(scraper, "main", boom)
 
     exit_code = scraper.run_cli([])
@@ -194,10 +215,18 @@ def test_run_cli_does_not_hit_network_before_raising_on_bad_range(tmp_path, monk
     # make/model or ever creating a requests.Session pointed at the real API.
     monkeypatch.chdir(tmp_path)
 
-    exit_code = scraper.run_cli([
-        "--make", "Tesla", "--model", "Model S",
-        "--price-from", "100", "--price-to", "50",
-    ])
+    exit_code = scraper.run_cli(
+        [
+            "--make",
+            "Tesla",
+            "--model",
+            "Model S",
+            "--price-from",
+            "100",
+            "--price-to",
+            "50",
+        ]
+    )
 
     assert exit_code == 1
     assert not list(tmp_path.iterdir())

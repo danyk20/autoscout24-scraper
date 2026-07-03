@@ -1,10 +1,11 @@
 """Unit tests for _scalarize(), flatten_listing() and order_fieldnames()."""
+
 import json
 
 import autoscout24_scraper as scraper
 
-
 # --- _scalarize -------------------------------------------------------
+
 
 def test_scalarize_none_becomes_empty_string():
     assert scraper._scalarize(None) == ""
@@ -66,6 +67,7 @@ def test_scalarize_unrecognized_type_falls_back_to_str():
 
 
 # --- flatten_listing ----------------------------------------------------
+
 
 def test_flatten_listing_extracts_seller_fields(summary_listing_factory):
     item = summary_listing_factory(1)
@@ -156,6 +158,7 @@ def test_flatten_listing_joins_images_list(summary_listing_factory):
 
 
 # --- order_fieldnames -----------------------------------------------------
+
 
 def test_order_fieldnames_puts_priority_fields_first_in_declared_order():
     keys = {"zzz_extra", "price", "id", "aaa_extra", "make"}

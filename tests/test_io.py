@@ -1,7 +1,7 @@
 """Unit tests for save_csv(), save_json() and ScrapeResult."""
+
 import csv
 import json
-import os
 
 import autoscout24_scraper as scraper
 
@@ -99,12 +99,17 @@ def test_save_json_preserves_unicode_without_escaping(tmp_path):
 
 # --- ScrapeResult ----------------------------------------------------------
 
+
 def _make_result(rows, listings):
     return scraper.ScrapeResult(
-        make_key="tesla", make_name="TESLA",
-        model_key="model-s", model_name="MODEL S",
-        category="car", total_elements=len(listings),
-        listings=listings, rows=rows,
+        make_key="tesla",
+        make_name="TESLA",
+        model_key="model-s",
+        model_name="MODEL S",
+        category="car",
+        total_elements=len(listings),
+        listings=listings,
+        rows=rows,
     )
 
 
@@ -133,9 +138,12 @@ def test_scrape_result_to_json_writes_raw_listings_not_flattened_rows(tmp_path):
 
 def test_scrape_result_defaults_to_empty_lists_when_not_provided():
     result = scraper.ScrapeResult(
-        make_key="tesla", make_name="TESLA",
-        model_key="model-s", model_name="MODEL S",
-        category="car", total_elements=0,
+        make_key="tesla",
+        make_name="TESLA",
+        model_key="model-s",
+        model_name="MODEL S",
+        category="car",
+        total_elements=0,
     )
     assert result.listings == []
     assert result.rows == []
@@ -143,17 +151,24 @@ def test_scrape_result_defaults_to_empty_lists_when_not_provided():
 
 def test_scrape_result_defaults_to_ch_domain_when_not_provided():
     result = scraper.ScrapeResult(
-        make_key="tesla", make_name="TESLA",
-        model_key="model-s", model_name="MODEL S",
-        category="car", total_elements=0,
+        make_key="tesla",
+        make_name="TESLA",
+        model_key="model-s",
+        model_name="MODEL S",
+        category="car",
+        total_elements=0,
     )
     assert result.domain == "ch"
 
 
 def test_scrape_result_accepts_custom_domain():
     result = scraper.ScrapeResult(
-        make_key="tesla", make_name="TESLA",
-        model_key="model-s", model_name="MODEL S",
-        category="car", total_elements=0, domain="de",
+        make_key="tesla",
+        make_name="TESLA",
+        model_key="model-s",
+        model_name="MODEL S",
+        category="car",
+        total_elements=0,
+        domain="de",
     )
     assert result.domain == "de"

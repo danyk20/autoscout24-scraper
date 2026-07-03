@@ -1,5 +1,10 @@
 # AutoScout24 Scraper
 
+[![CI](https://github.com/danyk20/autoscout24-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/danyk20/autoscout24-scraper/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/unit%20test%20coverage-100%25-brightgreen)](#testing)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
+
 Fetches every listing for a given make/model from AutoScout24, for free — no
 API key, no token, no paid scraping service. Defaults to the Swiss site
 (`autoscout24.ch`), with an easy-to-use `--domain`/`domain=` override for
@@ -88,8 +93,17 @@ cd AutoScout
 pipenv install --dev
 ```
 
-(`--dev` also installs the test dependencies — pytest, pytest-cov, responses.
-Leave it off if you only want to run the scraper, not the test suite.)
+(`--dev` also installs the test/lint tooling — pytest, pytest-cov, responses,
+ruff, mypy. Leave it off if you only want to run the scraper.)
+
+```bash
+pipenv run ruff check .          # lint
+pipenv run ruff format --check . # formatting (drop --check to auto-format)
+pipenv run mypy autoscout24_scraper.py  # type-check
+```
+
+These are exactly the checks the CI workflow (`.github/workflows/ci.yml`)
+runs on every push/PR, across Python 3.11 and 3.12.
 
 ## Usage
 
@@ -317,6 +331,12 @@ In full detail mode (the default) this is around 115-120 columns; with
 `--no-detail`/`detail=False` it's around 20.
 
 ## Testing
+
+The CI badge above is live (it reflects the actual state of the most recent
+GitHub Actions run). The coverage badge is a static snapshot of the last
+verified `pytest` run, not wired to a live coverage service — enforced
+locally and in CI via the `--cov-fail-under=95` gate described below, so it
+can't silently drop without the build going red.
 
 The test suite lives in `tests/` and is split into two kinds of tests:
 

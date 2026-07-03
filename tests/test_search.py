@@ -1,4 +1,5 @@
 """Unit tests for search_listings(), fetch_detail() and visit_all_listings()."""
+
 import json
 
 import pytest
@@ -99,9 +100,16 @@ def test_search_listings_includes_all_six_filters_when_set(summary_listing_facto
     session = scraper.make_session()
 
     scraper.search_listings(
-        session, "tesla", "model-s", verbose=False,
-        price_from=1000, price_to=2000, mileage_from=10, mileage_to=20,
-        year_from=2015, year_to=2020,
+        session,
+        "tesla",
+        "model-s",
+        verbose=False,
+        price_from=1000,
+        price_to=2000,
+        mileage_from=10,
+        mileage_to=20,
+        year_from=2015,
+        year_to=2020,
     )
 
     body = json.loads(responses.calls[0].request.body)
@@ -188,7 +196,9 @@ def test_fetch_detail_uses_custom_domain(detail_listing_factory):
 
 @responses.activate
 def test_visit_all_listings_merges_seller_and_returns_detail_shape(
-    summary_listing_factory, detail_listing_factory, sleep_spy,
+    summary_listing_factory,
+    detail_listing_factory,
+    sleep_spy,
 ):
     summary_items = [summary_listing_factory(1), summary_listing_factory(2)]
     detail_1 = detail_listing_factory(1)

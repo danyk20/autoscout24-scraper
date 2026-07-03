@@ -45,7 +45,7 @@ This module can be used two ways:
 
     python3 autoscout24_scraper.py --make tesla --model model-s
     python3 autoscout24_scraper.py --make "Tesla" --model "Model S" --out tesla_model_s
-    python3 autoscout24_scraper.py --make tesla --model model-s --no-detail   # skip per-listing detail fetch (faster, fewer fields)
+    python3 autoscout24_scraper.py --make tesla --model model-s --no-detail   # skip per-listing detail fetch
     python3 autoscout24_scraper.py --make tesla --model model-s --price-to 30000 --year-from 2018
 
 2. As a library, imported from another project, returning data directly
@@ -60,12 +60,15 @@ This module can be used two ways:
     result.to_csv("tesla.csv")       # optional, if you want a file after all
     result.to_json("tesla.json")
 """
+
 import argparse
 import csv
 import json
 import sys
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -75,28 +78,38 @@ API_BASE = f"https://api.autoscout24.{DEFAULT_DOMAIN}/v1"
 PAGE_SIZE = 20
 
 
-def api_base(domain=DEFAULT_DOMAIN):
+def api_base(domain: str = DEFAULT_DOMAIN) -> str:
     return f"https://api.autoscout24.{domain}/v1"
 
 
-def listing_url(listing_id, domain=DEFAULT_DOMAIN):
+def listing_url(listing_id: int, domain: str = DEFAULT_DOMAIN) -> str:
     return f"https://www.autoscout24.{domain}/de/d/{listing_id}"
+
+
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
     "Content-Type": "application/json",
     "Accept": "application/json",
     "Accept-Language": "de-CH,de;q=0.9,en;q=0.8",
 }
 
 
-def make_session():
+def make_session() -> requests.Session:
     s = requests.Session()
     s.headers.update(DEFAULT_HEADERS)
     return s
 
 
-def request_with_retries(session, method, url, *, max_retries=5, backoff=1.5, **kwargs):
+def request_with_retries(
+    session: requests.Session,
+    method: str,
+    url: str,
+    *,
+    max_retries: int = 5,
+    backoff: float = 1.5,
+    **kwargs: Any,
+) -> requests.Response:
     kwargs.setdefault("timeout", 20)
     for attempt in range(1, max_retries + 1):
         try:
@@ -104,17 +117,20 @@ def request_with_retries(session, method, url, *, max_retries=5, backoff=1.5, **
         except requests.RequestException as exc:
             if attempt == max_retries:
                 raise
-            wait = backoff ** attempt
-            print(f"  [warn] {method} {url} failed ({exc}); retry {attempt}/{max_retries} in {wait:.1f}s",
-                  file=sys.stderr)
+            wait = backoff**attempt
+            print(
+                f"  [warn] {method} {url} failed ({exc}); retry {attempt}/{max_retries} in {wait:.1f}s", file=sys.stderr
+            )
             time.sleep(wait)
             continue
         if resp.status_code == 429 or resp.status_code >= 500:
             if attempt == max_retries:
                 resp.raise_for_status()
-            wait = backoff ** attempt
-            print(f"  [warn] {method} {url} -> {resp.status_code}; retry {attempt}/{max_retries} in {wait:.1f}s",
-                  file=sys.stderr)
+            wait = backoff**attempt
+            print(
+                f"  [warn] {method} {url} -> {resp.status_code}; retry {attempt}/{max_retries} in {wait:.1f}s",
+                file=sys.stderr,
+            )
             time.sleep(wait)
             continue
         resp.raise_for_status()
@@ -122,10 +138,16 @@ def request_with_retries(session, method, url, *, max_retries=5, backoff=1.5, **
     raise RuntimeError("unreachable")  # pragma: no cover
 
 
-def resolve_make_key(session, make_query, vehicle_category="car", domain=DEFAULT_DOMAIN):
+def resolve_make_key(
+    session: requests.Session,
+    make_query: str,
+    vehicle_category: str = "car",
+    domain: str = DEFAULT_DOMAIN,
+) -> tuple[str, str]:
     """Accepts either an exact key (e.g. 'tesla') or a human name (e.g. 'Tesla')."""
-    resp = request_with_retries(session, "GET", f"{api_base(domain)}/makes",
-                                 params={"vehicleCategory": vehicle_category})
+    resp = request_with_retries(
+        session, "GET", f"{api_base(domain)}/makes", params={"vehicleCategory": vehicle_category}
+    )
     makes = resp.json()
     q = make_query.strip().lower()
     for m in makes:
@@ -140,9 +162,19 @@ def resolve_make_key(session, make_query, vehicle_category="car", domain=DEFAULT
     raise ValueError(f"Could not find a make matching {make_query!r}")
 
 
-def resolve_model_key(session, make_key, model_query, vehicle_category="car", domain=DEFAULT_DOMAIN):
-    resp = request_with_retries(session, "GET", f"{api_base(domain)}/makes/key/{quote(make_key)}/models",
-                                 params={"vehicleCategory": vehicle_category})
+def resolve_model_key(
+    session: requests.Session,
+    make_key: str,
+    model_query: str,
+    vehicle_category: str = "car",
+    domain: str = DEFAULT_DOMAIN,
+) -> tuple[str, str]:
+    resp = request_with_retries(
+        session,
+        "GET",
+        f"{api_base(domain)}/makes/key/{quote(make_key)}/models",
+        params={"vehicleCategory": vehicle_category},
+    )
     models = resp.json()
     q = model_query.strip().lower()
     for m in models:
@@ -155,13 +187,26 @@ def resolve_model_key(session, make_key, model_query, vehicle_category="car", do
         if q in m["name"].lower() or q in m["key"].lower():
             return m["key"], m["name"]
     available = ", ".join(sorted(m["name"] for m in models))
-    raise ValueError(f"Could not find a model matching {model_query!r} for make {make_key!r}. "
-                      f"Available models: {available}")
+    raise ValueError(
+        f"Could not find a model matching {model_query!r} for make {make_key!r}. Available models: {available}"
+    )
 
 
-def search_listings(session, make_key, model_key, vehicle_category="car", delay=0.4, verbose=True,
-                     price_from=None, price_to=None, mileage_from=None, mileage_to=None,
-                     year_from=None, year_to=None, domain=DEFAULT_DOMAIN):
+def search_listings(
+    session: requests.Session,
+    make_key: str,
+    model_key: str,
+    vehicle_category: str = "car",
+    delay: float = 0.4,
+    verbose: bool = True,
+    price_from: int | None = None,
+    price_to: int | None = None,
+    mileage_from: int | None = None,
+    mileage_to: int | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    domain: str = DEFAULT_DOMAIN,
+) -> list[dict[str, Any]]:
     """Fetch every listing for a given make/model, deduplicated by id.
 
     Sorting explicitly by price is important: with no sort specified, the API
@@ -221,8 +266,10 @@ def search_listings(session, make_key, model_key, vehicle_category="car", delay=
                 new_count += 1
 
         if verbose:
-            print(f"  page {page + 1}/{total_pages}: {len(content)} listings "
-                  f"({new_count} new, {len(listings)} total so far)")
+            print(
+                f"  page {page + 1}/{total_pages}: {len(content)} listings "
+                f"({new_count} new, {len(listings)} total so far)"
+            )
 
         page += 1
         if page < total_pages:
@@ -234,12 +281,18 @@ def search_listings(session, make_key, model_key, vehicle_category="car", delay=
     return listings
 
 
-def fetch_detail(session, listing_id, domain=DEFAULT_DOMAIN):
+def fetch_detail(session: requests.Session, listing_id: int, domain: str = DEFAULT_DOMAIN) -> dict[str, Any]:
     resp = request_with_retries(session, "GET", f"{api_base(domain)}/listings/{listing_id}")
     return resp.json()
 
 
-def visit_all_listings(session, listings, delay=0.4, verbose=True, domain=DEFAULT_DOMAIN):
+def visit_all_listings(
+    session: requests.Session,
+    listings: list[dict[str, Any]],
+    delay: float = 0.4,
+    verbose: bool = True,
+    domain: str = DEFAULT_DOMAIN,
+) -> list[dict[str, Any]]:
     """Visit each listing's detail endpoint one by one and merge the result.
 
     The detail endpoint (GET /v1/listings/{id}) returns far more fields than
@@ -269,14 +322,27 @@ def visit_all_listings(session, listings, delay=0.4, verbose=True, domain=DEFAUL
 # the listing objects is appended afterwards, sorted alphabetically, so no
 # field the API returns is ever silently dropped.
 PRIORITY_FIELDS = [
-    "id", "make", "model", "versionFullName", "price", "previousPrice",
-    "conditionType", "firstRegistrationYear", "mileage", "fuelType",
-    "transmissionType", "horsePower", "sellerName", "sellerType",
-    "sellerCity", "sellerZip", "url",
+    "id",
+    "make",
+    "model",
+    "versionFullName",
+    "price",
+    "previousPrice",
+    "conditionType",
+    "firstRegistrationYear",
+    "mileage",
+    "fuelType",
+    "transmissionType",
+    "horsePower",
+    "sellerName",
+    "sellerType",
+    "sellerCity",
+    "sellerZip",
+    "url",
 ]
 
 
-def _scalarize(value):
+def _scalarize(value: Any) -> Any:
     """Turn a nested dict/list value into something that fits one CSV cell."""
     if value is None:
         return ""
@@ -293,10 +359,10 @@ def _scalarize(value):
     return str(value)
 
 
-def flatten_listing(item):
+def flatten_listing(item: dict[str, Any]) -> dict[str, Any]:
     """Flatten a listing (search-result or full-detail shape) into one flat
     dict covering every field the API returned for it, so nothing is lost."""
-    flat = {}
+    flat: dict[str, Any] = {}
     for key, value in item.items():
         if key == "seller" and isinstance(value, dict):
             flat["sellerName"] = value.get("name")
@@ -316,21 +382,21 @@ def flatten_listing(item):
     # search_listings()/visit_all_listings() already embed a domain-correct
     # "url" on the raw item; only fall back to computing a default-domain one
     # here for listings flattened without going through those (e.g. tests).
-    flat.setdefault("url", listing_url(item.get("id")))
+    flat.setdefault("url", listing_url(item["id"]))
     return flat
 
 
-def order_fieldnames(all_keys):
+def order_fieldnames(all_keys: Iterable[str]) -> list[str]:
     ordered = [f for f in PRIORITY_FIELDS if f in all_keys]
     remaining = sorted(k for k in all_keys if k not in ordered)
     return ordered + remaining
 
 
-def save_csv(rows, path):
+def save_csv(rows: list[dict[str, Any]], path: str) -> None:
     if not rows:
         print("  [warn] no rows to write")
         return
-    all_keys = set()
+    all_keys: set[str] = set()
     for row in rows:
         all_keys.update(row.keys())
     fieldnames = order_fieldnames(all_keys)
@@ -340,7 +406,7 @@ def save_csv(rows, path):
         writer.writerows(rows)
 
 
-def save_json(rows, path):
+def save_json(rows: list[dict[str, Any]], path: str) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
 
@@ -348,26 +414,41 @@ def save_json(rows, path):
 @dataclass
 class ScrapeResult:
     """Everything a scrape() call produced, ready to use in-memory or save to disk."""
+
     make_key: str
     make_name: str
     model_key: str
     model_name: str
     category: str
     total_elements: int
-    listings: list = field(default_factory=list)  # raw API objects (summary or full detail shape)
-    rows: list = field(default_factory=list)       # flattened dicts, one per listing, CSV-ready
-    domain: str = DEFAULT_DOMAIN                   # country domain that was scraped, e.g. "ch"
+    listings: list[dict[str, Any]] = field(default_factory=list)  # raw API objects (summary or full detail shape)
+    rows: list[dict[str, Any]] = field(default_factory=list)  # flattened dicts, one per listing, CSV-ready
+    domain: str = DEFAULT_DOMAIN  # country domain that was scraped, e.g. "ch"
 
-    def to_csv(self, path):
+    def to_csv(self, path: str) -> None:
         save_csv(self.rows, path)
 
-    def to_json(self, path):
+    def to_json(self, path: str) -> None:
         save_json(self.listings, path)
 
 
-def scrape(make, model, *, domain=DEFAULT_DOMAIN, category="car", detail=True,
-           price_from=None, price_to=None, mileage_from=None, mileage_to=None,
-           year_from=None, year_to=None, delay=0.4, verbose=True, session=None):
+def scrape(
+    make: str,
+    model: str,
+    *,
+    domain: str = DEFAULT_DOMAIN,
+    category: str = "car",
+    detail: bool = True,
+    price_from: int | None = None,
+    price_to: int | None = None,
+    mileage_from: int | None = None,
+    mileage_to: int | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    delay: float = 0.4,
+    verbose: bool = True,
+    session: requests.Session | None = None,
+) -> ScrapeResult:
     """Search autoscout24.<domain> for a make/model and return the results in memory.
 
     This is the library entry point: it does the same work as the CLI but
@@ -433,10 +514,19 @@ def scrape(make, model, *, domain=DEFAULT_DOMAIN, category="car", detail=True,
         print(f"Fetching listings for {make_name} {model_name} (autoscout24.{domain}){filter_note} ...")
 
     listings = search_listings(
-        session, make_key, model_key, category, delay=delay, verbose=verbose,
-        price_from=price_from, price_to=price_to,
-        mileage_from=mileage_from, mileage_to=mileage_to,
-        year_from=year_from, year_to=year_to, domain=domain,
+        session,
+        make_key,
+        model_key,
+        category,
+        delay=delay,
+        verbose=verbose,
+        price_from=price_from,
+        price_to=price_to,
+        mileage_from=mileage_from,
+        mileage_to=mileage_to,
+        year_from=year_from,
+        year_to=year_to,
+        domain=domain,
     )
     total_elements = len(listings)
 
@@ -449,41 +539,54 @@ def scrape(make, model, *, domain=DEFAULT_DOMAIN, category="car", detail=True,
     rows.sort(key=lambda r: (r.get("price") in (None, ""), r.get("price")))
 
     return ScrapeResult(
-        make_key=make_key, make_name=make_name,
-        model_key=model_key, model_name=model_name,
-        category=category, total_elements=total_elements,
-        listings=listings, rows=rows, domain=domain,
+        make_key=make_key,
+        make_name=make_name,
+        model_key=model_key,
+        model_name=model_name,
+        category=category,
+        total_elements=total_elements,
+        listings=listings,
+        rows=rows,
+        domain=domain,
     )
 
 
-def build_arg_parser():
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Scrape autoscout24.ch listings for a given make/model.")
     parser.add_argument("--make", required=True, help="Make name or key, e.g. 'Tesla' or 'tesla'")
     parser.add_argument("--model", required=True, help="Model name or key, e.g. 'Model S' or 'model-s'")
-    parser.add_argument("--domain", default=DEFAULT_DOMAIN,
-                         help=f"Country domain to scrape, matching autoscout24.<domain> "
-                              f"(default: {DEFAULT_DOMAIN!r}). Only 'ch' is confirmed to work "
-                              f"as of this writing; see the module docstring.")
-    parser.add_argument("--category", default="car", choices=["car", "motorcycle"],
-                         help="Vehicle category (default: car)")
-    parser.add_argument("--out", default=None, help="Output file base name (without extension). "
-                                                      "Defaults to '<make>_<model>' in the current directory.")
-    parser.add_argument("--no-detail", action="store_true",
-                         help="Skip visiting each listing's detail page; keep only the summary "
-                              "fields from the search results (faster, fewer fields).")
+    parser.add_argument(
+        "--domain",
+        default=DEFAULT_DOMAIN,
+        help=f"Country domain to scrape, matching autoscout24.<domain> "
+        f"(default: {DEFAULT_DOMAIN!r}). Only 'ch' is confirmed to work "
+        f"as of this writing; see the module docstring.",
+    )
+    parser.add_argument(
+        "--category", default="car", choices=["car", "motorcycle"], help="Vehicle category (default: car)"
+    )
+    parser.add_argument(
+        "--out",
+        default=None,
+        help="Output file base name (without extension). Defaults to '<make>_<model>' in the current directory.",
+    )
+    parser.add_argument(
+        "--no-detail",
+        action="store_true",
+        help="Skip visiting each listing's detail page; keep only the summary "
+        "fields from the search results (faster, fewer fields).",
+    )
     parser.add_argument("--delay", type=float, default=0.4, help="Delay in seconds between requests.")
     parser.add_argument("--price-from", type=int, default=None, help="Minimum price in CHF (inclusive).")
     parser.add_argument("--price-to", type=int, default=None, help="Maximum price in CHF (inclusive).")
     parser.add_argument("--mileage-from", type=int, default=None, help="Minimum mileage in km (inclusive).")
     parser.add_argument("--mileage-to", type=int, default=None, help="Maximum mileage in km (inclusive).")
-    parser.add_argument("--year-from", type=int, default=None,
-                         help="Earliest first-registration year (inclusive).")
-    parser.add_argument("--year-to", type=int, default=None,
-                         help="Latest first-registration year (inclusive).")
+    parser.add_argument("--year-from", type=int, default=None, help="Earliest first-registration year (inclusive).")
+    parser.add_argument("--year-to", type=int, default=None, help="Latest first-registration year (inclusive).")
     return parser
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Parses argv (defaults to sys.argv[1:]), scrapes, and
     writes CSV + JSON files. Returns 0 on success; lets exceptions propagate
     (see run_cli() for the error-handling / exit-code wrapper used by the
@@ -492,14 +595,19 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     result = scrape(
-        args.make, args.model,
+        args.make,
+        args.model,
         domain=args.domain,
         category=args.category,
         detail=not args.no_detail,
-        price_from=args.price_from, price_to=args.price_to,
-        mileage_from=args.mileage_from, mileage_to=args.mileage_to,
-        year_from=args.year_from, year_to=args.year_to,
-        delay=args.delay, verbose=True,
+        price_from=args.price_from,
+        price_to=args.price_to,
+        mileage_from=args.mileage_from,
+        mileage_to=args.mileage_to,
+        year_from=args.year_from,
+        year_to=args.year_to,
+        delay=args.delay,
+        verbose=True,
     )
 
     out_base = args.out or f"{result.make_key}_{result.model_key}"
@@ -514,7 +622,7 @@ def main(argv=None):
     return 0
 
 
-def run_cli(argv=None):
+def run_cli(argv: list[str] | None = None) -> int:
     """Run main() and translate exceptions into (message, exit code) the way
     the command line expects. Factored out from the __main__ guard so it can
     be unit-tested directly without spawning a subprocess."""

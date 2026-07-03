@@ -5,6 +5,7 @@ resolve_model_key, search_listings, visit_all_listings) so we can test the
 orchestration in isolation from HTTP. End-to-end tests that hit the real
 API live in test_e2e.py.
 """
+
 import pytest
 
 import autoscout24_scraper as scraper
@@ -20,16 +21,28 @@ def patched_pipeline(monkeypatch, summary_listing_factory, detail_listing_factor
         calls["resolve_make_key"] = (session, make_query, vehicle_category, domain)
         return "tesla", "TESLA"
 
-    def fake_resolve_model_key(session, make_key, model_query, vehicle_category="car",
-                                domain=scraper.DEFAULT_DOMAIN):
+    def fake_resolve_model_key(session, make_key, model_query, vehicle_category="car", domain=scraper.DEFAULT_DOMAIN):
         calls["resolve_model_key"] = (session, make_key, model_query, vehicle_category, domain)
         return "model-s", "MODEL S"
 
-    def fake_search_listings(session, make_key, model_key, vehicle_category="car", delay=0.4,
-                              verbose=True, domain=scraper.DEFAULT_DOMAIN, **filters):
+    def fake_search_listings(
+        session,
+        make_key,
+        model_key,
+        vehicle_category="car",
+        delay=0.4,
+        verbose=True,
+        domain=scraper.DEFAULT_DOMAIN,
+        **filters,
+    ):
         calls["search_listings"] = dict(
-            make_key=make_key, model_key=model_key, vehicle_category=vehicle_category,
-            delay=delay, verbose=verbose, domain=domain, filters=filters,
+            make_key=make_key,
+            model_key=model_key,
+            vehicle_category=vehicle_category,
+            delay=delay,
+            verbose=verbose,
+            domain=domain,
+            filters=filters,
         )
         return [summary_listing_factory(1, price=200), summary_listing_factory(2, price=100)]
 
@@ -102,15 +115,25 @@ def test_scrape_verbose_mentions_domain(patched_pipeline, capsys):
 
 def test_scrape_passes_all_filters_through(patched_pipeline):
     scraper.scrape(
-        "Tesla", "Model S", verbose=False,
-        price_from=1, price_to=2, mileage_from=3, mileage_to=4, year_from=5, year_to=6,
+        "Tesla",
+        "Model S",
+        verbose=False,
+        price_from=1,
+        price_to=2,
+        mileage_from=3,
+        mileage_to=4,
+        year_from=5,
+        year_to=6,
     )
 
     filters = patched_pipeline["search_listings"]["filters"]
     assert filters == {
-        "price_from": 1, "price_to": 2,
-        "mileage_from": 3, "mileage_to": 4,
-        "year_from": 5, "year_to": 6,
+        "price_from": 1,
+        "price_to": 2,
+        "mileage_from": 3,
+        "mileage_to": 4,
+        "year_from": 5,
+        "year_to": 6,
     }
 
 
@@ -144,7 +167,8 @@ def test_scrape_rows_with_missing_price_sort_last(monkeypatch, summary_listing_f
     monkeypatch.setattr(scraper, "resolve_make_key", lambda *a, **k: ("tesla", "TESLA"))
     monkeypatch.setattr(scraper, "resolve_model_key", lambda *a, **k: ("model-s", "MODEL S"))
     monkeypatch.setattr(
-        scraper, "search_listings",
+        scraper,
+        "search_listings",
         lambda *a, **k: [listing_no_price, listing_with_price],
     )
 
@@ -192,11 +216,14 @@ def test_scrape_reuses_provided_session(patched_pipeline):
     assert patched_pipeline["resolve_make_key"][0] is sentinel_session
 
 
-@pytest.mark.parametrize("kwargs", [
-    {"price_from": 100, "price_to": 50},
-    {"mileage_from": 100, "mileage_to": 50},
-    {"year_from": 2020, "year_to": 2010},
-])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"price_from": 100, "price_to": 50},
+        {"mileage_from": 100, "mileage_to": 50},
+        {"year_from": 2020, "year_to": 2010},
+    ],
+)
 def test_scrape_raises_on_inverted_ranges_before_any_network_call(patched_pipeline, kwargs):
     with pytest.raises(ValueError, match="cannot be greater than"):
         scraper.scrape("Tesla", "Model S", verbose=False, **kwargs)
@@ -205,11 +232,14 @@ def test_scrape_raises_on_inverted_ranges_before_any_network_call(patched_pipeli
     assert patched_pipeline == {}
 
 
-@pytest.mark.parametrize("kwargs", [
-    {"price_from": 50, "price_to": 50},
-    {"mileage_from": 50, "mileage_to": 50},
-    {"year_from": 2020, "year_to": 2020},
-])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"price_from": 50, "price_to": 50},
+        {"mileage_from": 50, "mileage_to": 50},
+        {"year_from": 2020, "year_to": 2020},
+    ],
+)
 def test_scrape_allows_equal_from_and_to(patched_pipeline, kwargs):
     # equal bounds are a valid (if narrow) range, not an error
     scraper.scrape("Tesla", "Model S", verbose=False, **kwargs)
