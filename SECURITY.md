@@ -12,8 +12,8 @@ Please report security issues privately rather than opening a public issue:
 
 - Preferred: use [GitHub's private vulnerability reporting](https://github.com/danyk20/autoscout24-scraper/security/advisories/new)
   for this repository.
-- Alternatively, email daniel.kosc@gmail.com with a description and, if
-  possible, steps to reproduce.
+- Alternatively, email vulnerability@danielkosc.eu with a description and,
+  if possible, steps to reproduce.
 
 Please allow a reasonable amount of time to respond and address the issue
 before any public disclosure. This is a small, single-maintainer project —
