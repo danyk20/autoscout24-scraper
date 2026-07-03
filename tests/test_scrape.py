@@ -107,10 +107,11 @@ def test_scrape_passes_custom_domain_through(patched_pipeline):
     assert patched_pipeline["visit_all_listings"]["domain"] == "de"
 
 
-def test_scrape_verbose_mentions_domain(patched_pipeline, capsys):
-    scraper.scrape("Tesla", "Model S", domain="de", verbose=True)
+def test_scrape_verbose_mentions_domain(patched_pipeline, caplog):
+    with caplog.at_level("INFO", logger="autoscout24_scraper"):
+        scraper.scrape("Tesla", "Model S", domain="de", verbose=True)
 
-    assert "autoscout24.de" in capsys.readouterr().out
+    assert "autoscout24.de" in caplog.text
 
 
 def test_scrape_passes_all_filters_through(patched_pipeline):
@@ -184,27 +185,30 @@ def test_scrape_verbose_false_prints_nothing(patched_pipeline, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_scrape_verbose_true_prints_progress(patched_pipeline, capsys):
-    scraper.scrape("Tesla", "Model S", verbose=True)
+def test_scrape_verbose_true_prints_progress(patched_pipeline, caplog):
+    with caplog.at_level("INFO", logger="autoscout24_scraper"):
+        scraper.scrape("Tesla", "Model S", verbose=True)
 
-    out = capsys.readouterr().out
+    out = caplog.text
     assert "Resolving make 'Tesla'" in out
     assert "Resolving model 'Model S'" in out
     assert "Fetching listings for TESLA MODEL S" in out
 
 
-def test_scrape_verbose_notes_active_filters(patched_pipeline, capsys):
-    scraper.scrape("Tesla", "Model S", verbose=True, price_to=30000, year_from=2018)
+def test_scrape_verbose_notes_active_filters(patched_pipeline, caplog):
+    with caplog.at_level("INFO", logger="autoscout24_scraper"):
+        scraper.scrape("Tesla", "Model S", verbose=True, price_to=30000, year_from=2018)
 
-    out = capsys.readouterr().out
+    out = caplog.text
     assert "price 0-30000 CHF" in out
     assert "year 2018-" in out
 
 
-def test_scrape_verbose_notes_mileage_filter(patched_pipeline, capsys):
-    scraper.scrape("Tesla", "Model S", verbose=True, mileage_to=60000)
+def test_scrape_verbose_notes_mileage_filter(patched_pipeline, caplog):
+    with caplog.at_level("INFO", logger="autoscout24_scraper"):
+        scraper.scrape("Tesla", "Model S", verbose=True, mileage_to=60000)
 
-    out = capsys.readouterr().out
+    out = caplog.text
     assert "mileage 0-60000 km" in out
 
 

@@ -122,13 +122,14 @@ def test_search_listings_includes_all_six_filters_when_set(summary_listing_facto
 
 
 @responses.activate
-def test_search_listings_verbose_prints_progress(summary_listing_factory, capsys):
+def test_search_listings_verbose_prints_progress(summary_listing_factory, caplog):
     responses.add(responses.POST, SEARCH_URL, json=search_page([summary_listing_factory(1)], 1, 1, 0), status=200)
     session = scraper.make_session()
 
-    scraper.search_listings(session, "tesla", "model-s", verbose=True)
+    with caplog.at_level("INFO", logger="autoscout24_scraper"):
+        scraper.search_listings(session, "tesla", "model-s", verbose=True)
 
-    out = capsys.readouterr().out
+    out = caplog.text
     assert "page 1/1" in out
     assert "API reports 1 total matches" in out
 
@@ -243,15 +244,16 @@ def test_visit_all_listings_uses_custom_domain_for_api_and_url(summary_listing_f
 
 
 @responses.activate
-def test_visit_all_listings_prints_progress_every_ten_and_at_end(summary_listing_factory, capsys):
+def test_visit_all_listings_prints_progress_every_ten_and_at_end(summary_listing_factory, caplog):
     items = [summary_listing_factory(i) for i in range(1, 12)]
     for item in items:
         responses.add(responses.GET, DETAIL_URL_TEMPLATE.format(id=item["id"]), json=item, status=200)
     session = scraper.make_session()
 
-    scraper.visit_all_listings(session, items, delay=0, verbose=True)
+    with caplog.at_level("INFO", logger="autoscout24_scraper"):
+        scraper.visit_all_listings(session, items, delay=0, verbose=True)
 
-    out = capsys.readouterr().out
+    out = caplog.text
     assert "visited 10/11" in out
     assert "visited 11/11" in out
 

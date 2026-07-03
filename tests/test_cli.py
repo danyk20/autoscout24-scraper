@@ -182,40 +182,43 @@ def test_run_cli_returns_zero_on_success(fake_scrape, tmp_path, monkeypatch):
     assert exit_code == 0
 
 
-def test_run_cli_returns_one_and_prints_error_on_value_error(monkeypatch, capsys):
+def test_run_cli_returns_one_and_prints_error_on_value_error(monkeypatch, caplog):
     def boom(argv=None):
         raise ValueError("no such make")
 
     monkeypatch.setattr(scraper, "main", boom)
 
-    exit_code = scraper.run_cli([])
+    with caplog.at_level("ERROR", logger="autoscout24_scraper"):
+        exit_code = scraper.run_cli([])
 
     assert exit_code == 1
-    assert "Error: no such make" in capsys.readouterr().err
+    assert "Error: no such make" in caplog.text
 
 
-def test_run_cli_returns_one_and_prints_message_on_network_error(monkeypatch, capsys):
+def test_run_cli_returns_one_and_prints_message_on_network_error(monkeypatch, caplog):
     def boom(argv=None):
         raise requests.ConnectionError("dns failure")
 
     monkeypatch.setattr(scraper, "main", boom)
 
-    exit_code = scraper.run_cli([])
+    with caplog.at_level("ERROR", logger="autoscout24_scraper"):
+        exit_code = scraper.run_cli([])
 
     assert exit_code == 1
-    assert "Network error talking to autoscout24.ch" in capsys.readouterr().err
+    assert "Network error talking to autoscout24.ch" in caplog.text
 
 
-def test_run_cli_returns_130_on_keyboard_interrupt(monkeypatch, capsys):
+def test_run_cli_returns_130_on_keyboard_interrupt(monkeypatch, caplog):
     def boom(argv=None):
         raise KeyboardInterrupt()
 
     monkeypatch.setattr(scraper, "main", boom)
 
-    exit_code = scraper.run_cli([])
+    with caplog.at_level("ERROR", logger="autoscout24_scraper"):
+        exit_code = scraper.run_cli([])
 
     assert exit_code == 130
-    assert "Interrupted" in capsys.readouterr().err
+    assert "Interrupted" in caplog.text
 
 
 def test_run_cli_does_not_hit_network_before_raising_on_bad_range(tmp_path, monkeypatch):

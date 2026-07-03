@@ -55,13 +55,14 @@ def test_save_csv_orders_priority_fields_first(tmp_path):
     assert fieldnames.index("price") < fieldnames.index("zzz")
 
 
-def test_save_csv_with_no_rows_warns_and_writes_nothing(tmp_path, capsys):
+def test_save_csv_with_no_rows_warns_and_writes_nothing(tmp_path, caplog):
     path = tmp_path / "out.csv"
 
-    scraper.save_csv([], str(path))
+    with caplog.at_level("WARNING", logger="autoscout24_scraper"):
+        scraper.save_csv([], str(path))
 
     assert not path.exists()
-    assert "no rows to write" in capsys.readouterr().out
+    assert "no rows to write" in caplog.text
 
 
 def test_save_csv_preserves_unicode(tmp_path):

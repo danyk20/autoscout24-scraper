@@ -140,6 +140,8 @@ directory: `tesla_model-s.csv` and `tesla_model-s.json`.
 | `--price-from` / `--price-to` | Filter by price in CHF (inclusive, either end optional) |
 | `--mileage-from` / `--mileage-to` | Filter by mileage in km (inclusive, either end optional) |
 | `--year-from` / `--year-to` | Filter by first-registration year (inclusive, either end optional) |
+| `-v` / `--verbose` | Also show debug-level detail, including every HTTP request made (mutually exclusive with `-q`) |
+| `-q` / `--quiet` | Suppress progress output; only warnings/errors are shown (mutually exclusive with `-v`) |
 
 All three filters are optional and combine with AND. They're applied by the
 search API itself (not filtered client-side afterwards), so they also cut
@@ -222,7 +224,7 @@ def scrape(
     year_from: int | None = None,    # first-registration year, inclusive
     year_to: int | None = None,      # first-registration year, inclusive
     delay: float = 0.4,              # seconds between HTTP requests
-    verbose: bool = True,            # print progress to stdout
+    verbose: bool = True,            # emit progress via the "autoscout24_scraper" logger at INFO level
     session: requests.Session | None = None,  # reuse a session across calls if given
 ) -> ScrapeResult:
     ...
@@ -232,6 +234,23 @@ Raises `ValueError` immediately (before any network call) if any `_from` is
 greater than its `_to`. Raises `requests.RequestException` subclasses on
 unrecoverable network errors, and `ValueError` if `make`/`model` can't be
 resolved (the message lists valid models for an unknown-model error).
+
+**Logging.** Library code never configures logging itself (no
+`basicConfig`, no handlers) — it only emits through
+`logging.getLogger("autoscout24_scraper")`, same as any well-behaved
+library. That means if you call `scrape()` from your own script with no
+logging configuration of your own, `verbose=True`'s progress messages exist
+but won't be visible anywhere, by design — Python's standard "libraries
+don't talk unless you ask them to" behavior. To see them:
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO)  # now scrape()'s progress is visible
+```
+
+The CLI is the one place that *does* configure real handlers automatically
+(see `--verbose`/`--quiet` below) — that's the only difference between
+running this as a script versus importing it.
 
 #### `ScrapeResult` — the return value
 

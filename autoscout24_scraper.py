@@ -64,6 +64,7 @@ This module can be used two ways:
 import argparse
 import csv
 import json
+import logging
 import sys
 import time
 from collections.abc import Iterable
@@ -78,6 +79,15 @@ __version__ = "0.1.0"
 DEFAULT_DOMAIN = "ch"
 API_BASE = f"https://api.autoscout24.{DEFAULT_DOMAIN}/v1"
 PAGE_SIZE = 20
+
+# Library code only ever logs through this logger - it never calls
+# basicConfig or attaches handlers of its own (that would be rude to a host
+# application). The CLI (see _configure_cli_logging(), used by main()) is the
+# only place that sets up real handlers, so plain library use is silent
+# unless the caller configures logging themselves, e.g.:
+#     import logging; logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("autoscout24_scraper")
+logger.addHandler(logging.NullHandler())
 
 
 def api_base(domain: str = DEFAULT_DOMAIN) -> str:
@@ -113,6 +123,7 @@ def request_with_retries(
     **kwargs: Any,
 ) -> requests.Response:
     kwargs.setdefault("timeout", 20)
+    logger.debug("%s %s", method, url)
     for attempt in range(1, max_retries + 1):
         try:
             resp = session.request(method, url, **kwargs)
@@ -120,18 +131,15 @@ def request_with_retries(
             if attempt == max_retries:
                 raise
             wait = backoff**attempt
-            print(
-                f"  [warn] {method} {url} failed ({exc}); retry {attempt}/{max_retries} in {wait:.1f}s", file=sys.stderr
-            )
+            logger.warning("%s %s failed (%s); retry %d/%d in %.1fs", method, url, exc, attempt, max_retries, wait)
             time.sleep(wait)
             continue
         if resp.status_code == 429 or resp.status_code >= 500:
             if attempt == max_retries:
                 resp.raise_for_status()
             wait = backoff**attempt
-            print(
-                f"  [warn] {method} {url} -> {resp.status_code}; retry {attempt}/{max_retries} in {wait:.1f}s",
-                file=sys.stderr,
+            logger.warning(
+                "%s %s -> %d; retry %d/%d in %.1fs", method, url, resp.status_code, attempt, max_retries, wait
             )
             time.sleep(wait)
             continue
@@ -268,9 +276,13 @@ def search_listings(
                 new_count += 1
 
         if verbose:
-            print(
-                f"  page {page + 1}/{total_pages}: {len(content)} listings "
-                f"({new_count} new, {len(listings)} total so far)"
+            logger.info(
+                "  page %d/%d: %d listings (%d new, %d total so far)",
+                page + 1,
+                total_pages,
+                len(content),
+                new_count,
+                len(listings),
             )
 
         page += 1
@@ -278,7 +290,7 @@ def search_listings(
             time.sleep(delay)
 
     if verbose and total_elements is not None:
-        print(f"  API reports {total_elements} total matches; collected {len(listings)} unique listings")
+        logger.info("  API reports %d total matches; collected %d unique listings", total_elements, len(listings))
 
     return listings
 
@@ -314,7 +326,7 @@ def visit_all_listings(
         detail["url"] = listing_url(listing_id, domain)
         visited.append(detail)
         if verbose and (i % 10 == 0 or i == total):
-            print(f"  visited {i}/{total} listings (id={listing_id})")
+            logger.info("  visited %d/%d listings (id=%s)", i, total, listing_id)
         if i < total:
             time.sleep(delay)
     return visited
@@ -396,7 +408,7 @@ def order_fieldnames(all_keys: Iterable[str]) -> list[str]:
 
 def save_csv(rows: list[dict[str, Any]], path: str) -> None:
     if not rows:
-        print("  [warn] no rows to write")
+        logger.warning("no rows to write")
         return
     all_keys: set[str] = set()
     for row in rows:
@@ -493,16 +505,16 @@ def scrape(
     session = session or make_session()
 
     if verbose:
-        print(f"Resolving make {make!r} ...")
+        logger.info("Resolving make %r ...", make)
     make_key, make_name = resolve_make_key(session, make, category, domain=domain)
     if verbose:
-        print(f"  -> make key={make_key!r} name={make_name!r}")
+        logger.info("  -> make key=%r name=%r", make_key, make_name)
 
     if verbose:
-        print(f"Resolving model {model!r} for make {make_name!r} ...")
+        logger.info("Resolving model %r for make %r ...", model, make_name)
     model_key, model_name = resolve_model_key(session, make_key, model, category, domain=domain)
     if verbose:
-        print(f"  -> model key={model_key!r} name={model_name!r}")
+        logger.info("  -> model key=%r name=%r", model_key, model_name)
 
     if verbose:
         active_filters = []
@@ -513,7 +525,7 @@ def scrape(
         if year_from is not None or year_to is not None:
             active_filters.append(f"year {year_from or '…'}-{year_to or '…'}")
         filter_note = f" [filters: {', '.join(active_filters)}]" if active_filters else ""
-        print(f"Fetching listings for {make_name} {model_name} (autoscout24.{domain}){filter_note} ...")
+        logger.info("Fetching listings for %s %s (autoscout24.%s)%s ...", make_name, model_name, domain, filter_note)
 
     listings = search_listings(
         session,
@@ -534,7 +546,7 @@ def scrape(
 
     if detail:
         if verbose:
-            print(f"Visiting each of {len(listings)} listings one by one to extract full details ...")
+            logger.info("Visiting each of %d listings one by one to extract full details ...", len(listings))
         listings = visit_all_listings(session, listings, delay=delay, verbose=verbose, domain=domain)
 
     rows = [flatten_listing(item) for item in listings]
@@ -586,7 +598,39 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mileage-to", type=int, default=None, help="Maximum mileage in km (inclusive).")
     parser.add_argument("--year-from", type=int, default=None, help="Earliest first-registration year (inclusive).")
     parser.add_argument("--year-to", type=int, default=None, help="Latest first-registration year (inclusive).")
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument(
+        "-v", "--verbose", action="store_true", help="Show debug-level detail, including every HTTP request made."
+    )
+    verbosity.add_argument(
+        "-q", "--quiet", action="store_true", help="Suppress progress output; only warnings/errors are shown."
+    )
     return parser
+
+
+def _configure_cli_logging(*, verbose: bool, quiet: bool) -> None:
+    """Set up console logging for CLI use, matching this script's traditional
+    print()-based output split: progress (INFO, or DEBUG with -v) goes to
+    stdout, warnings/errors (-q still shows these) go to stderr. Only main()
+    calls this - plain library use of scrape() never touches logging config,
+    since that would be rude to whatever application imported it."""
+    level = logging.DEBUG if verbose else logging.WARNING if quiet else logging.INFO
+    plain = logging.Formatter("%(message)s")
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(level)
+    stdout_handler.addFilter(lambda record: record.levelno < logging.WARNING)
+    stdout_handler.setFormatter(plain)
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.WARNING)
+    stderr_handler.setFormatter(plain)
+
+    logger.handlers.clear()
+    logger.addHandler(stdout_handler)
+    logger.addHandler(stderr_handler)
+    logger.setLevel(level)
+    logger.propagate = False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -596,6 +640,7 @@ def main(argv: list[str] | None = None) -> int:
     __main__ guard below)."""
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    _configure_cli_logging(verbose=args.verbose, quiet=args.quiet)
 
     result = scrape(
         args.make,
@@ -619,9 +664,9 @@ def main(argv: list[str] | None = None) -> int:
     result.to_csv(csv_path)
     result.to_json(json_path)
 
-    print(f"\nDone. {len(result.rows)} unique listings found.")
-    print(f"  CSV:  {csv_path}")
-    print(f"  JSON: {json_path}")
+    logger.info("\nDone. %d unique listings found.", len(result.rows))
+    logger.info("  CSV:  %s", csv_path)
+    logger.info("  JSON: %s", json_path)
     return 0
 
 
@@ -632,13 +677,13 @@ def run_cli(argv: list[str] | None = None) -> int:
     try:
         return main(argv) or 0
     except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        logger.error("Error: %s", exc)
         return 1
     except requests.RequestException as exc:
-        print(f"Network error talking to autoscout24.ch: {exc}", file=sys.stderr)
+        logger.error("Network error talking to autoscout24.ch: %s", exc)
         return 1
     except KeyboardInterrupt:
-        print("\nInterrupted.", file=sys.stderr)
+        logger.error("\nInterrupted.")
         return 130
 
 
