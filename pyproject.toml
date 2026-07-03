@@ -1,3 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "autoscout24-scraper"
+description = "Free, keyless scraper and library for autoscout24.ch vehicle listings."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Daniel Košč", email = "daniel.kosc@gmail.com" }]
+dependencies = ["requests~=2.34"]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/danyk20/autoscout24-scraper"
+Repository = "https://github.com/danyk20/autoscout24-scraper"
+
+[project.scripts]
+autoscout24-scraper = "autoscout24_scraper:run_cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest~=9.1",
+    "pytest-cov~=7.1",
+    "responses~=0.26",
+    "ruff~=0.15",
+    "mypy~=2.1",
+    "types-requests~=2.33",
+]
+
+[tool.hatch.version]
+path = "autoscout24_scraper.py"
+
+[tool.hatch.build.targets.wheel]
+include = ["autoscout24_scraper.py"]
+
 [tool.pytest.ini_options]
 markers = [
     "e2e: end-to-end tests that make real network calls to autoscout24.ch",

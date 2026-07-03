@@ -163,6 +163,14 @@ def test_main_rejects_unknown_category(fake_scrape):
         scraper.main(["--make", "Tesla", "--model", "Model S", "--category", "spaceship"])
 
 
+def test_main_version_flag_prints_version_and_exits_zero(fake_scrape, capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        scraper.main(["--version"])
+
+    assert excinfo.value.code == 0
+    assert scraper.__version__ in capsys.readouterr().out
+
+
 # --- run_cli() error-handling / exit codes --------------------------------
 
 

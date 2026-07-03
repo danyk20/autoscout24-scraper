@@ -116,6 +116,11 @@ as a library you import into another project to get the data back directly.
 pipenv run python autoscout24_scraper.py --make Tesla --model "Model S"
 ```
 
+(If you installed the package via `pip install` instead, as described in the
+"as a library" section below, the same command is just
+`autoscout24-scraper --make Tesla --model "Model S"` — no `pipenv run`
+needed.)
+
 This prints progress per search page, then visits every matching listing one
 by one to pull full details, and writes two output files in the current
 directory: `tesla_model-s.csv` and `tesla_model-s.json`.
@@ -124,6 +129,7 @@ directory: `tesla_model-s.csv` and `tesla_model-s.json`.
 
 | Flag | Description |
 |---|---|
+| `--version` | Print the installed version and exit |
 | `--make` | Make name or key, e.g. `Tesla` or `tesla` (required) |
 | `--model` | Model name or key, e.g. `"Model S"` or `model-s` (required) |
 | `--domain` | Country domain, matching `autoscout24.<domain>` (default `ch`). Only `ch` is confirmed to work today — see [Domains](#domains) |
@@ -250,11 +256,15 @@ class ScrapeResult:
 holds (barring `--no-detail`/`detail=False`, where they still match — detail
 mode only adds fields, it never drops or adds listings).
 
-Add this project's directory to your `PYTHONPATH` (or copy
-`autoscout24_scraper.py` alongside your code) so the import resolves; it
-only depends on `requests`, so `pip install requests` in your own project's
-environment is enough — pipenv here is only needed to run this repo's CLI
-and test suite.
+Install it into your own project's environment with:
+
+```bash
+pip install git+https://github.com/danyk20/autoscout24-scraper.git
+```
+
+This also gives you a real `autoscout24-scraper` command (see `--version`
+below), not just the importable module — pipenv is only needed if you're
+working on this repo itself (running its CLI from source, or its test suite).
 
 ## Data structure
 

@@ -73,6 +73,8 @@ from urllib.parse import quote
 
 import requests
 
+__version__ = "0.1.0"
+
 DEFAULT_DOMAIN = "ch"
 API_BASE = f"https://api.autoscout24.{DEFAULT_DOMAIN}/v1"
 PAGE_SIZE = 20
@@ -553,6 +555,7 @@ def scrape(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Scrape autoscout24.ch listings for a given make/model.")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--make", required=True, help="Make name or key, e.g. 'Tesla' or 'tesla'")
     parser.add_argument("--model", required=True, help="Model name or key, e.g. 'Model S' or 'model-s'")
     parser.add_argument(
