@@ -4,17 +4,33 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoscout24-scraper"
-description = "Free, keyless scraper and library for autoscout24.ch vehicle listings."
+description = "Free, keyless scraper and library for autoscout24.ch vehicle listings. Unofficial, not affiliated with AutoScout24 AG."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "Daniel Košč", email = "daniel.kosc@gmail.com" }]
 dependencies = ["requests~=2.34"]
 dynamic = ["version"]
+keywords = ["autoscout24", "web-scraping", "scraper", "cars", "switzerland", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 
 [project.urls]
 Homepage = "https://github.com/danyk20/autoscout24-scraper"
 Repository = "https://github.com/danyk20/autoscout24-scraper"
+Issues = "https://github.com/danyk20/autoscout24-scraper/issues"
+Changelog = "https://github.com/danyk20/autoscout24-scraper/blob/master/CHANGELOG.md"
 
 [project.scripts]
 autoscout24-scraper = "autoscout24_scraper:run_cli"

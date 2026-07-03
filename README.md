@@ -5,6 +5,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
 
+> Unofficial, independently developed project. Not affiliated with,
+> endorsed by, or sponsored by AutoScout24 AG or the Scout24 group.
+> "AutoScout24" is a trademark of its respective owner.
+
 Fetches every listing for a given make/model from AutoScout24, for free — no
 API key, no token, no paid scraping service. Defaults to the Swiss site
 (`autoscout24.ch`), with an easy-to-use `--domain`/`domain=` override for
