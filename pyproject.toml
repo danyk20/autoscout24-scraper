@@ -8,7 +8,7 @@ description = "Free, keyless scraper and library for autoscout24.ch vehicle list
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-authors = [{ name = "Daniel Košč", email = "daniel.kosc@gmail.com" }]
+authors = [{ name = "Daniel Košč", email = "maintainer@danielkosc.eu" }]
 dependencies = ["requests~=2.34"]
 dynamic = ["version"]
 keywords = ["autoscout24", "web-scraping", "scraper", "cars", "switzerland", "cli"]
