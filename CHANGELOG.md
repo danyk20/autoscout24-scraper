@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-16
+
+### Changed
+
+- Minimum supported Python bumped to 3.13 (dropping 3.11 and 3.12); CI,
+  ruff, and mypy target-version updated to match. **Breaking:** installs
+  on Python 3.11/3.12 will no longer work.
+
+### Fixed
+
+- `resolve_model_key()` no longer raises when a model query is a more
+  specific trim/variant than any listed model name (e.g. `"Model
+  S90D"` for Tesla's `"MODEL S"` line). It now falls back to the
+  closest listed model whose name/key is a prefix of the query, logging
+  a warning instead of erroring.
+
 ## [0.1.0] - 2026-07-03
 
 Initial release.

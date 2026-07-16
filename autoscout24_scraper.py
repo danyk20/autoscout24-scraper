@@ -74,7 +74,7 @@ from urllib.parse import quote
 
 import requests
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 DEFAULT_DOMAIN = "ch"
 API_BASE = f"https://api.autoscout24.{DEFAULT_DOMAIN}/v1"
@@ -196,6 +196,22 @@ def resolve_model_key(
     for m in models:
         if q in m["name"].lower() or q in m["key"].lower():
             return m["key"], m["name"]
+    # The query may be a trim/variant of a listed model rather than the model
+    # itself (e.g. "Model S90D" for the "MODEL S" line), so it won't appear as
+    # a substring of any listed name. Check the reverse direction: does a
+    # listed model's name/key appear as a prefix of the query? Prefer the
+    # longest such match so a more specific listed name (were one to exist)
+    # wins over a shorter, less specific one.
+    prefix_matches = [m for m in models if q.startswith(m["name"].lower()) or q.startswith(m["key"].lower())]
+    if prefix_matches:
+        best = max(prefix_matches, key=lambda m: max(len(m["name"]), len(m["key"])))
+        logger.warning(
+            "No exact model match for %r (make %r); using closest match %r",
+            model_query,
+            make_key,
+            best["name"],
+        )
+        return best["key"], best["name"]
     available = ", ".join(sorted(m["name"] for m in models))
     raise ValueError(
         f"Could not find a model matching {model_query!r} for make {make_key!r}. Available models: {available}"

@@ -117,6 +117,21 @@ def test_resolve_model_key_by_partial_substring_match(tesla_models_payload):
 
 
 @responses.activate
+def test_resolve_model_key_by_trim_variant_falls_back_to_closest_match(tesla_models_payload, caplog):
+    # "Model S90D" is a trim of the "MODEL S" line, not a listed model name,
+    # so it can't match via substring (the query is longer than the name).
+    responses.add(responses.GET, models_url("tesla"), json=tesla_models_payload, status=200)
+    session = scraper.make_session()
+
+    with caplog.at_level("WARNING", logger="autoscout24_scraper"):
+        key, name = scraper.resolve_model_key(session, "tesla", "Model S90D")
+
+    assert (key, name) == ("model-s", "MODEL S")
+    assert "Model S90D" in caplog.text
+    assert "MODEL S" in caplog.text
+
+
+@responses.activate
 def test_resolve_model_key_not_found_lists_available_models(tesla_models_payload):
     responses.add(responses.GET, models_url("tesla"), json=tesla_models_payload, status=200)
     session = scraper.make_session()

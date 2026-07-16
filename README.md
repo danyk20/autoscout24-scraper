@@ -4,7 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/autoscout24-scraper)](https://pypi.org/project/autoscout24-scraper/)
 [![Coverage](https://img.shields.io/badge/unit%20test%20coverage-100%25-brightgreen)](#testing)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/)
 
 > Unofficial, independently developed project — not affiliated with, endorsed by, or sponsored by AutoScout24 AG or the Scout24 group. "AutoScout24" is a trademark of its respective owner.
 
